@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.luxpryme" "\0"
-            VALUE "FileDescription", "luxpryme_stock" "\0"
+            VALUE "FileDescription", "Estoque Luxpryme" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "luxpryme_stock" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.luxpryme. All rights reserved." "\0"
             VALUE "OriginalFilename", "luxpryme_stock.exe" "\0"
-            VALUE "ProductName", "luxpryme_stock" "\0"
+            VALUE "ProductName", "Estoque Luxpryme" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

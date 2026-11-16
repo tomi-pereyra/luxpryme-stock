@@ -1,8 +1,8 @@
-/// Constantes da aplicação Luxpryme Stock
+/// Constantes da aplicação Estoque Luxpryme
 class AppConstants {
   AppConstants._();
 
-  static const String appName = 'Luxpryme Stock';
+  static const String appName = 'Estoque Luxpryme';
   static const String appTagline = 'Controle de Estoque Industrial';
   static const String appVersion = '1.0.0';
 

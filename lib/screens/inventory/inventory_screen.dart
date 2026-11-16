@@ -79,7 +79,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Encerrar Sessão'),
-        content: const Text('Deseja realmente sair do sistema Luxpryme Stock?'),
+        content: const Text('Deseja realmente sair do sistema Estoque Luxpryme?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),

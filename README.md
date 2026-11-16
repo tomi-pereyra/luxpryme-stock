@@ -1,4 +1,4 @@
-# 🔷 Luxpryme Stock
+# 🔷 Estoque Luxpryme
 
 Aplicativo de **Controle de Estoque Industrial** minimalista, robusto e com **sincronização em tempo real**, desenvolvido sob medida para a **Luxpryme** no setor de indústria e manufatura eletrônica.
 
