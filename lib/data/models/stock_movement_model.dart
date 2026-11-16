@@ -1,4 +1,8 @@
 class StockMovementModel {
+  static final RegExp _uuidRegex = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  );
+
   final String id;
   final String productId;
   final String productName;
@@ -57,27 +61,43 @@ class StockMovementModel {
       operatorName: map['operator_name']?.toString() ?? 'Operador',
       pinUsed: map['pin_used']?.toString(),
       createdAt: map['created_at'] != null
-          ? DateTime.tryParse(map['created_at'].toString()) ?? DateTime.now()
+          ? DateTime.tryParse(map['created_at'].toString())?.toLocal() ?? DateTime.now()
           : DateTime.now(),
     );
   }
 
-  Map<String, dynamic> toMap() {
-    return {
-      if (id.isNotEmpty) 'id': id,
-      'product_id': productId,
+  Map<String, dynamic> toMap({bool forDatabaseInsert = false}) {
+    final isValidId = _uuidRegex.hasMatch(id);
+    final isValidProductId = _uuidRegex.hasMatch(productId);
+
+    final map = <String, dynamic>{
       'product_name': productName,
-      if (productCode != null) 'product_code': productCode,
-      if (internalCode != null) 'internal_code': internalCode,
-      if (manufacturerCode != null) 'manufacturer_code': manufacturerCode,
+      if (productCode != null && productCode!.isNotEmpty) 'product_code': productCode,
+      if (internalCode != null && internalCode!.isNotEmpty) 'internal_code': internalCode,
+      if (manufacturerCode != null && manufacturerCode!.isNotEmpty) 'manufacturer_code': manufacturerCode,
       'category_names': categoryNames,
       'delta': delta,
       'previous_quantity': previousQuantity,
       'new_quantity': newQuantity,
       'type': type,
       'operator_name': operatorName,
-      if (pinUsed != null) 'pin_used': pinUsed,
+      if (pinUsed != null && pinUsed!.isNotEmpty) 'pin_used': pinUsed,
       'created_at': createdAt.toIso8601String(),
     };
+
+    if (forDatabaseInsert) {
+      // Para o banco de dados Supabase:
+      // Só envia id se for um UUID válido. Se não for, omite para o Postgres gerar com uuid_generate_v4()!
+      if (isValidId) {
+        map['id'] = id;
+      }
+      // Só envia product_id se for um UUID válido para não violar a FK e o tipo UUID
+      map['product_id'] = isValidProductId ? productId : null;
+    } else {
+      if (id.isNotEmpty) map['id'] = id;
+      map['product_id'] = productId;
+    }
+
+    return map;
   }
 }

@@ -313,7 +313,7 @@ class InventoryService {
     if (_isLocalMode || _client == null) {
       _localProducts.insert(0, newProduct);
       if (newProduct.quantity > 0) {
-        _localMovements.insert(0, movement);
+        await _recordMovement(movement);
       }
       _notifyLocal();
       return;
@@ -352,11 +352,7 @@ class InventoryService {
     }
 
     if (newProduct.quantity > 0) {
-      try {
-        await _client!.from('stock_movements').insert(movement.toMap());
-      } catch (e) {
-        debugPrint('Aviso: falha ao gravar stock_movements no Supabase: $e');
-      }
+      await _recordMovement(movement);
     }
   }
 
@@ -429,26 +425,29 @@ class InventoryService {
       targetProduct = _localProducts.firstWhere((p) => p.id == productId);
     }
 
+    final movement = targetProduct != null
+        ? StockMovementModel(
+            id: 'mov-${DateTime.now().microsecondsSinceEpoch}',
+            productId: targetProduct.id,
+            productName: targetProduct.name,
+            productCode: targetProduct.code,
+            internalCode: targetProduct.internalCode,
+            manufacturerCode: targetProduct.manufacturerCode,
+            categoryNames: targetProduct.categoryNames ?? [],
+            delta: -targetProduct.quantity,
+            previousQuantity: targetProduct.quantity,
+            newQuantity: 0,
+            type: 'PRODUCT_DELETE',
+            operatorName: operatorName,
+            pinUsed: pin != null && pin.isNotEmpty ? '****' : null,
+            createdAt: DateTime.now(),
+          )
+        : null;
+
     if (_isLocalMode || _client == null) {
       _localProducts.removeWhere((p) => p.id == productId);
-      if (targetProduct != null) {
-        final movement = StockMovementModel(
-          id: 'mov-${DateTime.now().microsecondsSinceEpoch}',
-          productId: targetProduct.id,
-          productName: targetProduct.name,
-          productCode: targetProduct.code,
-          internalCode: targetProduct.internalCode,
-          manufacturerCode: targetProduct.manufacturerCode,
-          categoryNames: targetProduct.categoryNames ?? [],
-          delta: -targetProduct.quantity,
-          previousQuantity: targetProduct.quantity,
-          newQuantity: 0,
-          type: 'PRODUCT_DELETE',
-          operatorName: operatorName,
-          pinUsed: pin != null && pin.isNotEmpty ? '****' : null,
-          createdAt: DateTime.now(),
-        );
-        _localMovements.insert(0, movement);
+      if (movement != null) {
+        await _recordMovement(movement);
       }
       _notifyLocal();
       return;
@@ -458,6 +457,10 @@ class InventoryService {
         .from(AppConstants.tableProducts)
         .delete()
         .eq('id', productId);
+
+    if (movement != null) {
+      await _recordMovement(movement);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -509,7 +512,7 @@ class InventoryService {
           updatedAt: DateTime.now(),
         );
       }
-      _localMovements.insert(0, movement);
+      await _recordMovement(movement);
       _notifyLocal();
       return newQuantity;
     }
@@ -520,12 +523,7 @@ class InventoryService {
         .update({'quantity': newQuantity})
         .eq('id', product.id);
 
-    try {
-      await _client!.from('stock_movements').insert(movement.toMap());
-    } catch (e) {
-      debugPrint('Aviso: falha ao gravar stock_movements no Supabase: $e');
-    }
-
+    await _recordMovement(movement);
     return newQuantity;
   }
 
@@ -639,18 +637,14 @@ class InventoryService {
             updatedAt: now,
           );
         }
-        _localMovements.insert(0, movement);
+        await _recordMovement(movement);
       } else {
         await _client!
             .from(AppConstants.tableProducts)
             .update({'quantity': newStock})
             .eq('id', item.product.id);
 
-        try {
-          await _client!.from('stock_movements').insert(movement.toMap());
-        } catch (e) {
-          debugPrint('Aviso: falha ao gravar log no Supabase: $e');
-        }
+        await _recordMovement(movement);
       }
     }
 
@@ -718,20 +712,138 @@ class InventoryService {
   }
 
   // ---------------------------------------------------------------------------
-  // HISTÓRICO DE MOVIMENTAÇÕES
+  // HISTÓRICO DE MOVIMENTAÇÕES (GRAVAÇÃO SEGURA & SINCRONIZAÇÃO HÍBRIDA)
   // ---------------------------------------------------------------------------
+
+  Future<void> _recordMovement(StockMovementModel movement) async {
+    // 1. Sempre atualiza a memória local imediatamente (resposta instantânea na UI)
+    _localMovements.removeWhere((m) => m.id.isNotEmpty && m.id == movement.id);
+    _localMovements.insert(0, movement);
+    if (!_movementsStreamController.isClosed) {
+      _movementsStreamController.add(List.unmodifiable(_localMovements));
+    }
+
+    // 2. Se conectado ao Supabase, grava no banco com payload seguro
+    if (!_isLocalMode && _client != null) {
+      try {
+        final payload = movement.toMap(forDatabaseInsert: true);
+        final res = await _client!
+            .from('stock_movements')
+            .insert(payload)
+            .select()
+            .maybeSingle();
+
+        if (res != null) {
+          final serverMovement = StockMovementModel.fromMap(res);
+          final idx = _localMovements.indexOf(movement);
+          if (idx != -1) {
+            _localMovements[idx] = serverMovement;
+          } else {
+            _localMovements.insert(0, serverMovement);
+          }
+          if (!_movementsStreamController.isClosed) {
+            _movementsStreamController.add(List.unmodifiable(_localMovements));
+          }
+        }
+      } catch (e) {
+        debugPrint('Aviso: falha ao gravar stock_movements no Supabase: $e');
+        // Fallback defensivo: se falhar com product_id (por FK ou UUID não existente), tenta sem product_id
+        try {
+          final fallbackPayload = movement.toMap(forDatabaseInsert: true);
+          fallbackPayload['product_id'] = null;
+          final res = await _client!
+              .from('stock_movements')
+              .insert(fallbackPayload)
+              .select()
+              .maybeSingle();
+          if (res != null) {
+            final serverMovement = StockMovementModel.fromMap(res);
+            final idx = _localMovements.indexOf(movement);
+            if (idx != -1) {
+              _localMovements[idx] = serverMovement;
+              if (!_movementsStreamController.isClosed) {
+                _movementsStreamController.add(List.unmodifiable(_localMovements));
+              }
+            }
+          }
+        } catch (e2) {
+          debugPrint('Falha no fallback de gravação de stock_movements: $e2');
+        }
+      }
+    }
+  }
+
+  Future<List<StockMovementModel>> fetchMovements() async {
+    if (_isLocalMode || _client == null) {
+      return List.unmodifiable(_localMovements);
+    }
+
+    try {
+      final records = await _client!
+          .from('stock_movements')
+          .select()
+          .order('created_at', ascending: false);
+
+      final list = (records as List)
+          .map((e) => StockMovementModel.fromMap(e as Map<String, dynamic>))
+          .toList();
+
+      // Mescla com itens locais da sessão atual caso ainda não tenham sido lidos
+      final serverIds = list.map((m) => m.id).toSet();
+      for (final local in _localMovements) {
+        if (!serverIds.contains(local.id)) {
+          list.insert(0, local);
+        }
+      }
+
+      _localMovements = list;
+      if (!_movementsStreamController.isClosed) {
+        _movementsStreamController.add(List.unmodifiable(_localMovements));
+      }
+      return list;
+    } catch (e) {
+      debugPrint('Aviso: falha ao buscar movimentações via REST: $e');
+      return List.unmodifiable(_localMovements);
+    }
+  }
 
   Stream<List<StockMovementModel>> streamMovements() {
     if (_isLocalMode || _client == null) {
-      Timer.run(() => _movementsStreamController.add(_localMovements));
+      Timer.run(() => _movementsStreamController.add(List.unmodifiable(_localMovements)));
       return _movementsStreamController.stream;
     }
 
-    return _client!
-        .from('stock_movements')
-        .stream(primaryKey: ['id'])
-        .order('created_at', ascending: false)
-        .map((records) =>
-            records.map((e) => StockMovementModel.fromMap(e)).toList());
+    // Busca via REST imediatamente para carregar dados mesmo se o realtime não estiver ativo
+    fetchMovements();
+
+    // Inicia listener realtime para sincronização contínua com outros dispositivos
+    try {
+      _client!
+          .from('stock_movements')
+          .stream(primaryKey: ['id'])
+          .order('created_at', ascending: false)
+          .listen(
+            (records) {
+              final list = records.map((e) => StockMovementModel.fromMap(e)).toList();
+              final serverIds = list.map((m) => m.id).toSet();
+              for (final local in _localMovements) {
+                if (!serverIds.contains(local.id)) {
+                  list.insert(0, local);
+                }
+              }
+              _localMovements = list;
+              if (!_movementsStreamController.isClosed) {
+                _movementsStreamController.add(List.unmodifiable(_localMovements));
+              }
+            },
+            onError: (err) {
+              debugPrint('Aviso no stream realtime de stock_movements: $err (fallback ativo)');
+            },
+          );
+    } catch (e) {
+      debugPrint('Erro ao iniciar realtime de stock_movements: $e');
+    }
+
+    return _movementsStreamController.stream;
   }
 }

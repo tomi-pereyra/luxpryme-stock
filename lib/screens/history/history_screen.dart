@@ -390,10 +390,57 @@ class _HistoryScreenState extends State<HistoryScreen> {
           'Histórico & Relatórios de Estoque',
           style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Atualizar Histórico',
+            onPressed: () async {
+              final list = await InventoryService.instance.fetchMovements();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('${list.length} movimentação(ões) carregada(s).'),
+                    duration: const Duration(seconds: 1),
+                  ),
+                );
+              }
+            },
+          ),
+        ],
       ),
       body: StreamBuilder<List<StockMovementModel>>(
         stream: InventoryService.instance.streamMovements(),
         builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError && (!snapshot.hasData || (snapshot.data ?? []).isEmpty)) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error_outline, size: 48, color: AppColors.stockZero),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Erro ao carregar histórico: ${snapshot.error}',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(color: AppColors.textSecondary),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Tentar Novamente'),
+                      onPressed: () => InventoryService.instance.fetchMovements(),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
           final allMovements = snapshot.data ?? [];
           final filteredList = _applyFilters(allMovements);
 
@@ -727,29 +774,40 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
               // Lista de Movimentações
               Expanded(
-                child: filteredList.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                child: RefreshIndicator(
+                  onRefresh: () => InventoryService.instance.fetchMovements(),
+                  child: filteredList.isEmpty
+                      ? ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
                           children: [
-                            const Icon(Icons.history_toggle_off,
-                                size: 48, color: AppColors.textMuted),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Nenhuma movimentação registrada com os filtros atuais.',
-                              style: GoogleFonts.inter(
-                                fontSize: 14,
-                                color: AppColors.textSecondary,
+                            SizedBox(
+                              height: MediaQuery.of(context).size.height * 0.4,
+                              child: Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.history_toggle_off,
+                                        size: 48, color: AppColors.textMuted),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'Nenhuma movimentação registrada com os filtros atuais.',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 14,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ],
-                        ),
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: filteredList.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 8),
-                        itemBuilder: (context, index) {
+                        )
+                      : ListView.separated(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.all(16),
+                          itemCount: filteredList.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 8),
+                          itemBuilder: (context, index) {
                           final m = filteredList[index];
                           final isEntry = m.isEntry;
                           final isCart = m.type.toUpperCase().startsWith('CART_');
@@ -903,6 +961,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           );
                         },
                       ),
+                ),
               ),
             ],
           );

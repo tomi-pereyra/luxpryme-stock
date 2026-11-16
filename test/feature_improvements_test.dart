@@ -106,6 +106,42 @@ void main() {
       expect(cartMov.type.startsWith('CART_'), isTrue);
       expect(directMov.type.startsWith('CART_'), isFalse);
     });
+
+    test('toMap com forDatabaseInsert filtra IDs não-UUID para evitar erro PostgreSQL 22P02', () {
+      final nonUuidMov = StockMovementModel(
+        id: 'mov-1731760000000000',
+        productId: 'prod-1234',
+        productName: 'Capacitor 100nF',
+        categoryNames: ['SMD'],
+        delta: 5,
+        previousQuantity: 10,
+        newQuantity: 15,
+        type: 'UNIT_ADD',
+        operatorName: 'Tomas Pereyra',
+        createdAt: DateTime.now(),
+      );
+
+      final insertPayload = nonUuidMov.toMap(forDatabaseInsert: true);
+      expect(insertPayload.containsKey('id'), isFalse, reason: 'ID não-UUID deve ser omitido para o Postgres gerar');
+      expect(insertPayload['product_id'], isNull, reason: 'product_id não-UUID deve ser null para evitar erro de sintaxe');
+
+      final realUuidMov = StockMovementModel(
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        productId: '987fcdeb-51a2-43f7-9abc-def012345678',
+        productName: 'Resistor 10k',
+        categoryNames: ['PTH'],
+        delta: -1,
+        previousQuantity: 20,
+        newQuantity: 19,
+        type: 'UNIT_REMOVE',
+        operatorName: 'Tomas Pereyra',
+        createdAt: DateTime.now(),
+      );
+
+      final realPayload = realUuidMov.toMap(forDatabaseInsert: true);
+      expect(realPayload['id'], equals('123e4567-e89b-12d3-a456-426614174000'));
+      expect(realPayload['product_id'], equals('987fcdeb-51a2-43f7-9abc-def012345678'));
+    });
   });
 
   group('Admin Access Control Tests', () {

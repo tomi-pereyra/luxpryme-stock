@@ -116,7 +116,10 @@ DROP POLICY IF EXISTS "Permitir leitura de pins" ON public.operator_pins;
 CREATE POLICY "Permitir leitura de pins" ON public.operator_pins FOR ALL TO authenticated USING (true);
 
 DROP POLICY IF EXISTS "Permitir leitura de movimentações" ON public.stock_movements;
-CREATE POLICY "Permitir leitura de movimentações" ON public.stock_movements FOR ALL TO authenticated USING (true);
+CREATE POLICY "Permitir leitura de movimentações" ON public.stock_movements FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir leitura e escrita pública de movimentações" ON public.stock_movements;
+CREATE POLICY "Permitir leitura e escrita pública de movimentações" ON public.stock_movements FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- 7. Habilitar Realtime de Forma 100% Segura (Sem erro se já existir na publicação)
 DO $$
