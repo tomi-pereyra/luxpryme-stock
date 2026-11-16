@@ -6,7 +6,7 @@ class ProductModel {
   final String? manufacturerCode;  // Código do Fabricante / Part Number
   final List<String> categoryIds;  // Suporte a múltiplas categorias
   final List<String>? categoryNames; // Nomes resolvidos das categorias
-  final String? subcategory;       // Sub-categoria específica do item
+  final List<String> subcategories; // Múltiplas sub-categorias do item
   final int quantity;
   final int minQuantity;
   final String? location;
@@ -22,14 +22,23 @@ class ProductModel {
     this.manufacturerCode,
     required this.categoryIds,
     this.categoryNames,
-    this.subcategory,
+    this.subcategories = const [],
+    String? subcategory,
     required this.quantity,
     this.minQuantity = 10,
     this.location,
     this.notes,
     this.createdAt,
     this.updatedAt,
-  });
+  }) : _legacySubcategory = subcategory;
+
+  final String? _legacySubcategory;
+
+  // Getter de compatibilidade com subcategoria singular
+  String? get subcategory {
+    if (subcategories.isNotEmpty) return subcategories.first;
+    return _legacySubcategory;
+  }
 
   // Getter de compatibilidade com código anterior
   String get categoryId => categoryIds.isNotEmpty ? categoryIds.first : '';
@@ -39,7 +48,7 @@ class ProductModel {
   bool get isOutOfStock => quantity <= 0;
   bool get isLowStock => quantity > 0 && quantity <= minQuantity;
 
-  /// Pesquisa inteligente por palavras desordenadas em Nome, Cód. Interno, P/N, Subcategoria e Notas
+  /// Pesquisa inteligente por palavras desordenadas em Nome, Cód. Interno, P/N, Subcategorias e Notas
   bool matchesSearch(String query) {
     if (query.isEmpty) return true;
     final q = query.toLowerCase().trim();
@@ -52,6 +61,7 @@ class ProductModel {
     if (internalCode != null) buffer.write('${internalCode!.toLowerCase()} ');
     if (manufacturerCode != null) buffer.write('${manufacturerCode!.toLowerCase()} ');
     if (code != null) buffer.write('${code!.toLowerCase()} ');
+    if (subcategories.isNotEmpty) buffer.write('${subcategories.join(' ').toLowerCase()} ');
     if (subcategory != null) buffer.write('${subcategory!.toLowerCase()} ');
     if (location != null) buffer.write('${location!.toLowerCase()} ');
     if (notes != null) buffer.write('${notes!.toLowerCase()} ');
@@ -77,6 +87,18 @@ class ProductModel {
       parsedCategoryIds = [map['category_id'].toString()];
     }
 
+    // Suporte para múltiplas sub-categorias e compatibilidade com subcategoria única
+    List<String> parsedSubcategories = [];
+    if (map['subcategories'] is List) {
+      parsedSubcategories = (map['subcategories'] as List)
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    } else if (map['subcategory'] != null &&
+        map['subcategory'].toString().trim().isNotEmpty) {
+      parsedSubcategories = [map['subcategory'].toString().trim()];
+    }
+
     return ProductModel(
       id: map['id']?.toString() ?? '',
       name: map['name']?.toString() ?? '',
@@ -85,7 +107,7 @@ class ProductModel {
       manufacturerCode: map['manufacturer_code']?.toString(),
       categoryIds: parsedCategoryIds,
       categoryNames: categoryNames,
-      subcategory: map['subcategory']?.toString(),
+      subcategories: parsedSubcategories,
       quantity: (map['quantity'] as num?)?.toInt() ?? 0,
       minQuantity: (map['min_quantity'] as num?)?.toInt() ?? 10,
       location: map['location']?.toString(),
@@ -107,6 +129,7 @@ class ProductModel {
       if (internalCode != null) 'internal_code': internalCode,
       if (manufacturerCode != null) 'manufacturer_code': manufacturerCode,
       'category_ids': categoryIds,
+      'subcategories': subcategories,
       if (subcategory != null) 'subcategory': subcategory,
       // Salva também o primeiro como category_id para compatibilidade
       if (categoryIds.isNotEmpty) 'category_id': categoryIds.first,
@@ -125,6 +148,7 @@ class ProductModel {
     String? manufacturerCode,
     List<String>? categoryIds,
     List<String>? categoryNames,
+    List<String>? subcategories,
     String? subcategory,
     int? quantity,
     int? minQuantity,
@@ -133,6 +157,11 @@ class ProductModel {
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
+    List<String> finalSubcats = subcategories ?? this.subcategories;
+    if (subcategory != null && subcategories == null) {
+      finalSubcats = [subcategory];
+    }
+
     return ProductModel(
       id: id ?? this.id,
       name: name ?? this.name,
@@ -141,7 +170,7 @@ class ProductModel {
       manufacturerCode: manufacturerCode ?? this.manufacturerCode,
       categoryIds: categoryIds ?? this.categoryIds,
       categoryNames: categoryNames ?? this.categoryNames,
-      subcategory: subcategory ?? this.subcategory,
+      subcategories: finalSubcats,
       quantity: quantity ?? this.quantity,
       minQuantity: minQuantity ?? this.minQuantity,
       location: location ?? this.location,

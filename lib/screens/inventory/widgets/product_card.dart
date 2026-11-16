@@ -138,25 +138,51 @@ class ProductCard extends StatelessWidget {
                             ),
                           );
                         }),
-                      if (product.subcategory != null && product.subcategory!.isNotEmpty)
+                      if (product.subcategories.isNotEmpty)
+                        ...product.subcategories.map((sub) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEEF2FF),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0xFFC7D2FE)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.subdirectory_arrow_right, size: 10, color: Color(0xFF4F46E5)),
+                                const SizedBox(width: 3),
+                                Text(
+                                  sub,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFF4338CA),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        })
+                      else if (product.subcategory != null && product.subcategory!.isNotEmpty)
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: AppColors.background,
+                            color: const Color(0xFFEEF2FF),
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: AppColors.border),
+                            border: Border.all(color: const Color(0xFFC7D2FE)),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.subdirectory_arrow_right, size: 10, color: AppColors.textSecondary),
+                              const Icon(Icons.subdirectory_arrow_right, size: 10, color: Color(0xFF4F46E5)),
                               const SizedBox(width: 3),
                               Text(
                                 product.subcategory!,
                                 style: GoogleFonts.inter(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
-                                  color: AppColors.textSecondary,
+                                  color: const Color(0xFF4338CA),
                                 ),
                               ),
                             ],

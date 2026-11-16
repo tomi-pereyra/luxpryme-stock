@@ -11,7 +11,7 @@ void main() {
       internalCode: 'MPE-16L',
       manufacturerCode: 'FAROL-LED-16',
       categoryIds: ['cat_1'],
-      subcategory: 'Linha Farol',
+      subcategories: ['Linha Farol', 'Iluminação Automotiva'],
       quantity: 50,
       minQuantity: 10,
     );
@@ -26,8 +26,9 @@ void main() {
       expect(testProduct.matchesSearch('mpe-16l placa farol'), isTrue);
     });
 
-    test('Encontra produto pela sub-categoria desordenada', () {
+    test('Encontra produto pelas múltiplas sub-categorias desordenadas', () {
       expect(testProduct.matchesSearch('farol linha'), isTrue);
+      expect(testProduct.matchesSearch('automotiva iluminação'), isTrue);
     });
 
     test('Não encontra quando uma palavra não existe', () {
@@ -36,7 +37,7 @@ void main() {
     });
   });
 
-  group('Category and Subcategory Model Tests', () {
+  group('Category and Multiple Subcategories Model Tests', () {
     test('CategoryModel suporta sub-categorias', () {
       final cat = CategoryModel(
         id: 'cat_smd',
@@ -52,12 +53,12 @@ void main() {
       expect(restored.subcategories.length, equals(3));
     });
 
-    test('ProductModel serializa e deserializa sub-categoria', () {
+    test('ProductModel serializa e deserializa múltiplas sub-categorias', () {
       final p = ProductModel(
         id: 'p1',
         name: 'Resistor 10k SMD 0805',
         categoryIds: ['cat_smd'],
-        subcategory: 'Resistores',
+        subcategories: ['Resistores', 'Precisão 1%', 'Passivos SMD'],
         quantity: 1000,
         minQuantity: 200,
       );
@@ -65,6 +66,10 @@ void main() {
       final map = p.toMap();
       final restored = ProductModel.fromMap(map);
 
+      expect(restored.subcategories.length, equals(3));
+      expect(restored.subcategories, contains('Resistores'));
+      expect(restored.subcategories, contains('Precisão 1%'));
+      expect(restored.subcategories, contains('Passivos SMD'));
       expect(restored.subcategory, equals('Resistores'));
     });
   });

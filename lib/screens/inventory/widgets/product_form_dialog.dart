@@ -30,13 +30,14 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   late TextEditingController _nameController;
   late TextEditingController _internalCodeController;
   late TextEditingController _manufacturerCodeController;
-  late TextEditingController _subcategoryController;
   late TextEditingController _quantityController;
   late TextEditingController _minQuantityController;
   late TextEditingController _locationController;
   late TextEditingController _notesController;
 
   late Set<String> _selectedCategoryIds;
+  late Set<String> _selectedSubcategories;
+  final Set<String> _extraAvailableSubcategories = {};
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -52,7 +53,6 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         TextEditingController(text: p?.internalCode ?? p?.code ?? '');
     _manufacturerCodeController =
         TextEditingController(text: p?.manufacturerCode ?? '');
-    _subcategoryController = TextEditingController(text: p?.subcategory ?? '');
     _quantityController =
         TextEditingController(text: (p?.quantity ?? 0).toString());
     _minQuantityController =
@@ -70,6 +70,17 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     } else {
       _selectedCategoryIds = {};
     }
+
+    // Inicializa sub-categorias selecionadas (suporta múltiplas)
+    final initialSubs = <String>{};
+    if (p != null) {
+      initialSubs.addAll(p.subcategories);
+      if (p.subcategory != null && p.subcategory!.trim().isNotEmpty) {
+        initialSubs.add(p.subcategory!.trim());
+      }
+    }
+    _selectedSubcategories = initialSubs;
+    _extraAvailableSubcategories.addAll(initialSubs);
   }
 
   @override
@@ -77,12 +88,62 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _nameController.dispose();
     _internalCodeController.dispose();
     _manufacturerCodeController.dispose();
-    _subcategoryController.dispose();
     _quantityController.dispose();
     _minQuantityController.dispose();
     _locationController.dispose();
     _notesController.dispose();
     super.dispose();
+  }
+
+  void _openNewSubcategoryDialog() {
+    final subController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Nova Sub-categoria',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 18),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Digite o nome da sub-categoria para associar ao item:',
+              style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: subController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: 'Ex: Resistores, Bornes, Controladoras...',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final text = subController.text.trim();
+              if (text.isNotEmpty) {
+                setState(() {
+                  _extraAvailableSubcategories.add(text);
+                  _selectedSubcategories.add(text);
+                });
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('Adicionar'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _handleSave() async {
@@ -123,9 +184,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       final manufacturerCode = _manufacturerCodeController.text.trim().isEmpty
           ? null
           : _manufacturerCodeController.text.trim();
-      final subcategory = _subcategoryController.text.trim().isEmpty
-          ? null
-          : _subcategoryController.text.trim();
+
+      final subcategoriesList = _selectedSubcategories.toList();
+      final subcategory = subcategoriesList.isNotEmpty ? subcategoriesList.first : null;
 
       final product = ProductModel(
         id: widget.productToEdit?.id ?? '',
@@ -135,6 +196,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         manufacturerCode: manufacturerCode,
         categoryIds: categoryList,
         categoryNames: categoryNameList,
+        subcategories: subcategoriesList,
         subcategory: subcategory,
         quantity: qty,
         minQuantity: minQty,
@@ -404,41 +466,102 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Sub-categoria
-                      Text(
-                        'Sub-categoria do Item',
-                        style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
+                      // Múltiplas Sub-categorias
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Sub-categorias (Pode marcar mais de uma)',
+                            style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
+                          ),
+                          InkWell(
+                            onTap: _openNewSubcategoryDialog,
+                            child: Text(
+                              '+ Nova sub-categoria',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 6),
-                      TextFormField(
-                        controller: _subcategoryController,
-                        decoration: const InputDecoration(
-                          hintText: 'Ex: Resistores, Bornes, Módulos, CIs, Eletrolíticos...',
-                        ),
-                      ),
+                      const SizedBox(height: 8),
+
                       Builder(builder: (context) {
-                        final suggestions = <String>{};
+                        final available = <String>{};
                         for (final catId in _selectedCategoryIds) {
                           final match = widget.categories.where((c) => c.id == catId);
                           if (match.isNotEmpty) {
-                            suggestions.addAll(match.first.subcategories);
+                            available.addAll(match.first.subcategories);
                           }
                         }
-                        if (suggestions.isEmpty) return const SizedBox.shrink();
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 8),
+                        available.addAll(_extraAvailableSubcategories);
+                        available.addAll(_selectedSubcategories);
+
+                        final sortedList = available.toList()
+                          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+                        if (sortedList.isEmpty) {
+                          return Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppColors.background,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: AppColors.border),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.info_outline, size: 16, color: AppColors.textMuted),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Nenhuma sub-categoria ainda. Clique em "+ Nova sub-categoria" para criar.',
+                                    style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+
+                        return Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppColors.background,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: AppColors.border),
+                          ),
                           child: Wrap(
-                            spacing: 6,
-                            runSpacing: 6,
-                            children: suggestions.map((sub) {
-                              return ActionChip(
-                                label: Text(sub, style: GoogleFonts.inter(fontSize: 11)),
-                                backgroundColor: AppColors.background,
-                                side: const BorderSide(color: AppColors.border),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                onPressed: () {
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: sortedList.map((sub) {
+                              final isSelected = _selectedSubcategories.contains(sub);
+                              return FilterChip(
+                                label: Text(
+                                  sub,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                    color: isSelected ? const Color(0xFF4338CA) : AppColors.textPrimary,
+                                  ),
+                                ),
+                                selected: isSelected,
+                                selectedColor: const Color(0xFFEEF2FF),
+                                checkmarkColor: const Color(0xFF4F46E5),
+                                side: BorderSide(
+                                  color: isSelected ? const Color(0xFF4F46E5) : AppColors.border,
+                                ),
+                                onSelected: (selected) {
                                   setState(() {
-                                    _subcategoryController.text = sub;
+                                    if (selected) {
+                                      _selectedSubcategories.add(sub);
+                                    } else {
+                                      _selectedSubcategories.remove(sub);
+                                    }
                                   });
                                 },
                               );

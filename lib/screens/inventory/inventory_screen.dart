@@ -17,6 +17,7 @@ import 'widgets/category_filter_bar.dart';
 import 'widgets/product_card.dart';
 import 'widgets/product_form_dialog.dart';
 import 'widgets/pin_confirmation_dialog.dart';
+import 'widgets/library_mode_screen.dart';
 
 enum SortOption {
   nameAsc('Nome (A - Z)'),
@@ -94,6 +95,23 @@ class _InventoryScreenState extends State<InventoryScreen> {
     }
   }
 
+  void _openLibraryMode(
+      List<CategoryModel> categories, List<ProductModel> products) {
+    LibraryModeScreen.open(
+      context,
+      categories: categories,
+      products: products,
+      initialCategoryId: _selectedCategoryId,
+      initialSubcategory: _selectedSubcategory,
+      onSelect: (categoryId, subcategory) {
+        setState(() {
+          _selectedCategoryId = categoryId;
+          _selectedSubcategory = subcategory;
+        });
+      },
+    );
+  }
+
   void _openAddProductDialog(List<CategoryModel> categories) {
     showDialog(
       context: context,
@@ -162,10 +180,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
     );
     final set = <String>{...selectedCat.subcategories};
     for (final p in rawProducts) {
-      if (p.categoryIds.contains(_selectedCategoryId) &&
-          p.subcategory != null &&
-          p.subcategory!.trim().isNotEmpty) {
-        set.add(p.subcategory!.trim());
+      if (p.categoryIds.contains(_selectedCategoryId)) {
+        for (final sub in p.subcategories) {
+          if (sub.trim().isNotEmpty) set.add(sub.trim());
+        }
+        if (p.subcategory != null && p.subcategory!.trim().isNotEmpty) {
+          set.add(p.subcategory!.trim());
+        }
       }
     }
     set.addAll(_customSubcategories);
@@ -193,9 +214,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
           .toList();
     }
 
-    // 2. Filtro por Sub-categoria
+    // 2. Filtro por Sub-categoria (Suporta múltiplas sub-categorias)
     if (_selectedSubcategory != null && _selectedSubcategory!.isNotEmpty) {
-      list = list.where((p) => p.subcategory == _selectedSubcategory).toList();
+      list = list.where((p) =>
+          p.subcategories.contains(_selectedSubcategory) ||
+          p.subcategory == _selectedSubcategory).toList();
     }
 
     // 3. Busca por Palavras Desordenadas (Nome, Código Interno, P/N, Subcategoria)
@@ -444,6 +467,36 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                                 color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+
+                    // Botão Modo Biblioteca (Menu Desdobrável)
+                    InkWell(
+                      onTap: () => _openLibraryMode(categories, rawProducts),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryContainer,
+                          border: Border.all(color: AppColors.primaryLight),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.account_tree_outlined, size: 18, color: AppColors.primaryDark),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Biblioteca',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primaryDark,
                               ),
                             ),
                           ],
