@@ -6,6 +6,7 @@ class ProductModel {
   final String? manufacturerCode;  // Código do Fabricante / Part Number
   final List<String> categoryIds;  // Suporte a múltiplas categorias
   final List<String>? categoryNames; // Nomes resolvidos das categorias
+  final String? subcategory;       // Sub-categoria específica do item
   final int quantity;
   final int minQuantity;
   final String? location;
@@ -21,6 +22,7 @@ class ProductModel {
     this.manufacturerCode,
     required this.categoryIds,
     this.categoryNames,
+    this.subcategory,
     required this.quantity,
     this.minQuantity = 10,
     this.location,
@@ -37,24 +39,29 @@ class ProductModel {
   bool get isOutOfStock => quantity <= 0;
   bool get isLowStock => quantity > 0 && quantity <= minQuantity;
 
-  /// Pesquisa inteligente: verifica Nome, Código Interno, Código do Fabricante ou Código Geral
+  /// Pesquisa inteligente por palavras desordenadas em Nome, Cód. Interno, P/N, Subcategoria e Notas
   bool matchesSearch(String query) {
     if (query.isEmpty) return true;
     final q = query.toLowerCase().trim();
+    final tokens = q.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+    if (tokens.isEmpty) return true;
 
-    final matchesName = name.toLowerCase().contains(q);
-    final matchesInternal =
-        internalCode != null && internalCode!.toLowerCase().contains(q);
-    final matchesManufacturer =
-        manufacturerCode != null && manufacturerCode!.toLowerCase().contains(q);
-    final matchesGeneralCode = code != null && code!.toLowerCase().contains(q);
-    final matchesLoc = location != null && location!.toLowerCase().contains(q);
+    final buffer = StringBuffer();
+    buffer.write(name.toLowerCase());
+    buffer.write(' ');
+    if (internalCode != null) buffer.write('${internalCode!.toLowerCase()} ');
+    if (manufacturerCode != null) buffer.write('${manufacturerCode!.toLowerCase()} ');
+    if (code != null) buffer.write('${code!.toLowerCase()} ');
+    if (subcategory != null) buffer.write('${subcategory!.toLowerCase()} ');
+    if (location != null) buffer.write('${location!.toLowerCase()} ');
+    if (notes != null) buffer.write('${notes!.toLowerCase()} ');
+    if (categoryNames != null) {
+      buffer.write('${categoryNames!.join(' ').toLowerCase()} ');
+    }
+    final fullText = buffer.toString();
 
-    return matchesName ||
-        matchesInternal ||
-        matchesManufacturer ||
-        matchesGeneralCode ||
-        matchesLoc;
+    // Todas as palavras digitadas devem estar presentes no produto (não importa a ordem)
+    return tokens.every((token) => fullText.contains(token));
   }
 
   factory ProductModel.fromMap(Map<String, dynamic> map,
@@ -78,6 +85,7 @@ class ProductModel {
       manufacturerCode: map['manufacturer_code']?.toString(),
       categoryIds: parsedCategoryIds,
       categoryNames: categoryNames,
+      subcategory: map['subcategory']?.toString(),
       quantity: (map['quantity'] as num?)?.toInt() ?? 0,
       minQuantity: (map['min_quantity'] as num?)?.toInt() ?? 10,
       location: map['location']?.toString(),
@@ -99,6 +107,7 @@ class ProductModel {
       if (internalCode != null) 'internal_code': internalCode,
       if (manufacturerCode != null) 'manufacturer_code': manufacturerCode,
       'category_ids': categoryIds,
+      if (subcategory != null) 'subcategory': subcategory,
       // Salva também o primeiro como category_id para compatibilidade
       if (categoryIds.isNotEmpty) 'category_id': categoryIds.first,
       'quantity': quantity,
@@ -116,6 +125,7 @@ class ProductModel {
     String? manufacturerCode,
     List<String>? categoryIds,
     List<String>? categoryNames,
+    String? subcategory,
     int? quantity,
     int? minQuantity,
     String? location,
@@ -131,6 +141,7 @@ class ProductModel {
       manufacturerCode: manufacturerCode ?? this.manufacturerCode,
       categoryIds: categoryIds ?? this.categoryIds,
       categoryNames: categoryNames ?? this.categoryNames,
+      subcategory: subcategory ?? this.subcategory,
       quantity: quantity ?? this.quantity,
       minQuantity: minQuantity ?? this.minQuantity,
       location: location ?? this.location,

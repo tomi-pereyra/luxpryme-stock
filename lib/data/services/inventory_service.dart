@@ -312,13 +312,19 @@ class InventoryService {
   }
 
   // ---------------------------------------------------------------------------
-  // AJUSTE RÁPIDO UNITÁRIO (+1 E -1) - INSTANTÂNEO E SEM SENHA
+  // AJUSTE UNITÁRIO (+1 E -1) - COM VALIDAÇÃO DE PIN DE 4 DÍGITOS E HISTÓRICO
   // ---------------------------------------------------------------------------
 
   Future<int> quickAdjustUnit({
     required ProductModel product,
     required int delta, // +1 ou -1
+    required String pin,
   }) async {
+    final operatorPin = await validatePin(pin);
+    if (operatorPin == null) {
+      throw Exception('PIN de 4 dígitos incorreto ou não autorizado.');
+    }
+
     final int newQuantity = product.quantity + delta;
     if (newQuantity < 0) {
       throw Exception(
@@ -337,8 +343,9 @@ class InventoryService {
       delta: delta,
       previousQuantity: product.quantity,
       newQuantity: newQuantity,
-      type: 'UNIT_QUICK',
-      operatorName: delta > 0 ? 'Ajuste Rápido (+1)' : 'Ajuste Rápido (-1)',
+      type: delta > 0 ? 'UNIT_ADD' : 'UNIT_REMOVE',
+      operatorName: operatorPin.name,
+      pinUsed: '****',
       createdAt: DateTime.now(),
     );
 
@@ -370,12 +377,18 @@ class InventoryService {
     return newQuantity;
   }
 
-  /// Método legado de ajuste direto com registro no histórico
+  /// Método de ajuste direto com registro no histórico e validação de PIN
   Future<int> adjustStock({
     required String productId,
     required int currentQuantity,
     required int delta,
+    required String pin,
   }) async {
+    final operatorPin = await validatePin(pin);
+    if (operatorPin == null) {
+      throw Exception('PIN de 4 dígitos incorreto ou não autorizado.');
+    }
+
     final int newQuantity = currentQuantity + delta;
     if (newQuantity < 0) {
       throw Exception('Estoque não pode ficar negativo.');
@@ -391,7 +404,7 @@ class InventoryService {
       ),
     );
 
-    return quickAdjustUnit(product: product, delta: delta);
+    return quickAdjustUnit(product: product, delta: delta, pin: pin);
   }
 
   // ---------------------------------------------------------------------------

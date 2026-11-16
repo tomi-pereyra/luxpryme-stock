@@ -29,6 +29,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   late TextEditingController _nameController;
   late TextEditingController _internalCodeController;
   late TextEditingController _manufacturerCodeController;
+  late TextEditingController _subcategoryController;
   late TextEditingController _quantityController;
   late TextEditingController _minQuantityController;
   late TextEditingController _locationController;
@@ -50,6 +51,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         TextEditingController(text: p?.internalCode ?? p?.code ?? '');
     _manufacturerCodeController =
         TextEditingController(text: p?.manufacturerCode ?? '');
+    _subcategoryController = TextEditingController(text: p?.subcategory ?? '');
     _quantityController =
         TextEditingController(text: (p?.quantity ?? 0).toString());
     _minQuantityController =
@@ -74,6 +76,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _nameController.dispose();
     _internalCodeController.dispose();
     _manufacturerCodeController.dispose();
+    _subcategoryController.dispose();
     _quantityController.dispose();
     _minQuantityController.dispose();
     _locationController.dispose();
@@ -119,6 +122,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       final manufacturerCode = _manufacturerCodeController.text.trim().isEmpty
           ? null
           : _manufacturerCodeController.text.trim();
+      final subcategory = _subcategoryController.text.trim().isEmpty
+          ? null
+          : _subcategoryController.text.trim();
 
       final product = ProductModel(
         id: widget.productToEdit?.id ?? '',
@@ -128,6 +134,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         manufacturerCode: manufacturerCode,
         categoryIds: categoryList,
         categoryNames: categoryNameList,
+        subcategory: subcategory,
         quantity: qty,
         minQuantity: minQty,
         location: _locationController.text.trim().isEmpty
@@ -377,6 +384,50 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           }).toList(),
                         ),
                       ),
+                      const SizedBox(height: 16),
+
+                      // Sub-categoria
+                      Text(
+                        'Sub-categoria do Item',
+                        style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 6),
+                      TextFormField(
+                        controller: _subcategoryController,
+                        decoration: const InputDecoration(
+                          hintText: 'Ex: Resistores, Bornes, Módulos, CIs, Eletrolíticos...',
+                        ),
+                      ),
+                      Builder(builder: (context) {
+                        final suggestions = <String>{};
+                        for (final catId in _selectedCategoryIds) {
+                          final match = widget.categories.where((c) => c.id == catId);
+                          if (match.isNotEmpty) {
+                            suggestions.addAll(match.first.subcategories);
+                          }
+                        }
+                        if (suggestions.isEmpty) return const SizedBox.shrink();
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: suggestions.map((sub) {
+                              return ActionChip(
+                                label: Text(sub, style: GoogleFonts.inter(fontSize: 11)),
+                                backgroundColor: AppColors.background,
+                                side: const BorderSide(color: AppColors.border),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                onPressed: () {
+                                  setState(() {
+                                    _subcategoryController.text = sub;
+                                  });
+                                },
+                              );
+                            }).toList(),
+                          ),
+                        );
+                      }),
                       const SizedBox(height: 18),
 
                       // Quantidade e Estoque Mínimo

@@ -40,6 +40,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   String _searchQuery = '';
   String? _selectedCategoryId;
+  String? _selectedSubcategory;
+  final Set<String> _customSubcategories = {};
   SortOption _selectedSort = SortOption.nameAsc;
 
   bool get isWindowsDesktop => !kIsWeb && Platform.isWindows;
@@ -158,6 +160,29 @@ class _InventoryScreenState extends State<InventoryScreen> {
     }
   }
 
+  List<String> _getAvailableSubcategories(
+    List<CategoryModel> categories,
+    List<ProductModel> rawProducts,
+  ) {
+    if (_selectedCategoryId == null) return [];
+    final selectedCat = categories.firstWhere(
+      (c) => c.id == _selectedCategoryId,
+      orElse: () => CategoryModel(id: _selectedCategoryId!, name: ''),
+    );
+    final set = <String>{...selectedCat.subcategories};
+    for (final p in rawProducts) {
+      if (p.categoryIds.contains(_selectedCategoryId) &&
+          p.subcategory != null &&
+          p.subcategory!.trim().isNotEmpty) {
+        set.add(p.subcategory!.trim());
+      }
+    }
+    set.addAll(_customSubcategories);
+    final list = set.toList();
+    list.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return list;
+  }
+
   List<ProductModel> _filterAndSortProducts(
     List<ProductModel> rawProducts,
     Map<String, String> categoryNameMap,
@@ -177,7 +202,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
           .toList();
     }
 
-    // 2. Busca por Nome, Código Interno ou Código do Fabricante / P/N
+    // 2. Filtro por Sub-categoria
+    if (_selectedSubcategory != null && _selectedSubcategory!.isNotEmpty) {
+      list = list.where((p) => p.subcategory == _selectedSubcategory).toList();
+    }
+
+    // 3. Busca por Palavras Desordenadas (Nome, Código Interno, P/N, Subcategoria)
     if (_searchQuery.isNotEmpty) {
       list = list.where((p) => p.matchesSearch(_searchQuery)).toList();
     }
@@ -337,8 +367,17 @@ class _InventoryScreenState extends State<InventoryScreen> {
               const SizedBox(width: 8),
             ],
           ),
-          body: Column(
-            children: [
+          body: StreamBuilder<List<ProductModel>>(
+            stream: InventoryService.instance.streamProducts(),
+            builder: (context, prodSnapshot) {
+              final rawProducts = prodSnapshot.data ?? [];
+              final filteredProducts =
+                  _filterAndSortProducts(rawProducts, categoryMap);
+              final availableSubcategories =
+                  _getAvailableSubcategories(categories, rawProducts);
+
+              return Column(
+                children: [
               // 1. Barra de Busca e Ordenação
               Container(
                 color: Colors.white,
@@ -424,15 +463,29 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 ),
               ),
 
-              // 2. Filtro Horizontal de Categorias (Suporta Múltiplas Categorias)
+              // 2. Filtro Horizontal de Categorias (Suporta Múltiplas Categorias & Sub-categorias)
               Container(
                 color: Colors.white,
                 padding: const EdgeInsets.only(bottom: 12),
                 child: CategoryFilterBar(
                   categories: categories,
                   selectedCategoryId: _selectedCategoryId,
+                  selectedSubcategory: _selectedSubcategory,
+                  availableSubcategories: availableSubcategories,
                   onSelectCategory: (id) {
-                    setState(() => _selectedCategoryId = id);
+                    setState(() {
+                      _selectedCategoryId = id;
+                      _selectedSubcategory = null;
+                    });
+                  },
+                  onSelectSubcategory: (sub) {
+                    setState(() => _selectedSubcategory = sub);
+                  },
+                  onAddSubcategory: (newSub) {
+                    setState(() {
+                      _customSubcategories.add(newSub);
+                      _selectedSubcategory = newSub;
+                    });
                   },
                   onManageCategories: () {
                     showDialog(
@@ -447,79 +500,103 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
               // 3. Lista em Tempo Real de Produtos
               Expanded(
-                child: StreamBuilder<List<ProductModel>>(
-                  stream: InventoryService.instance.streamProducts(),
-                  builder: (context, prodSnapshot) {
-                    if (prodSnapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
+                child: prodSnapshot.connectionState == ConnectionState.waiting
+                    ? const Center(child: CircularProgressIndicator())
+                    : filteredProducts.isEmpty
+                        ? Center(
+                            child: SingleChildScrollView(
+                              padding: const EdgeInsets.all(32),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    _searchQuery.isNotEmpty
+                                        ? Icons.search_off_outlined
+                                        : Icons.inventory_2_outlined,
+                                    size: 56,
+                                    color: AppColors.textMuted,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    _searchQuery.isNotEmpty
+                                        ? 'Nenhum item encontrado para "$_searchQuery"'
+                                        : 'Nenhum produto cadastrado',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Tente buscar pelo nome, código interno ou part number.',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 13,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        : LayoutBuilder(
+                            builder: (context, constraints) {
+                              // Em telas largas (desktop tela cheia / telas >= 900px), organiza em grade
+                              // com largura máxima controlada por card para evitar que ocupe a largura inteira
+                              final isWide = constraints.maxWidth >= 900;
+                              if (isWide) {
+                                return GridView.builder(
+                                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
+                                  gridDelegate:
+                                      const SliverGridDelegateWithMaxCrossAxisExtent(
+                                    maxCrossAxisExtent: 460,
+                                    mainAxisExtent: 280,
+                                    crossAxisSpacing: 14,
+                                    mainAxisSpacing: 14,
+                                  ),
+                                  itemCount: filteredProducts.length,
+                                  itemBuilder: (context, index) {
+                                    final product = filteredProducts[index];
+                                    return ProductCard(
+                                      product: product,
+                                      onEdit: () => _openEditProductDialog(
+                                          product, categories),
+                                      onDelete: () =>
+                                          _handleDeleteProduct(product),
+                                      onOpenCart: _openCartModal,
+                                    );
+                                  },
+                                );
+                              }
 
-                    final rawProducts = prodSnapshot.data ?? [];
-                    final filteredProducts =
-                        _filterAndSortProducts(rawProducts, categoryMap);
-
-                    if (filteredProducts.isEmpty) {
-                      return Center(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.all(32),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                _searchQuery.isNotEmpty
-                                    ? Icons.search_off_outlined
-                                    : Icons.inventory_2_outlined,
-                                size: 56,
-                                color: AppColors.textMuted,
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                _searchQuery.isNotEmpty
-                                    ? 'Nenhum item encontrado para "$_searchQuery"'
-                                    : 'Nenhum produto cadastrado',
-                                textAlign: TextAlign.center,
-                                style: GoogleFonts.inter(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Tente buscar pelo nome, código interno ou part number.',
-                                textAlign: TextAlign.center,
-                                style: GoogleFonts.inter(
-                                  fontSize: 13,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                            ],
+                              return ListView.builder(
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 12, 16, 80),
+                                itemCount: filteredProducts.length,
+                                itemBuilder: (context, index) {
+                                  final product = filteredProducts[index];
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: ProductCard(
+                                      product: product,
+                                      onEdit: () => _openEditProductDialog(
+                                          product, categories),
+                                      onDelete: () =>
+                                          _handleDeleteProduct(product),
+                                      onOpenCart: _openCartModal,
+                                    ),
+                                  );
+                                },
+                              );
+                            },
                           ),
-                        ),
-                      );
-                    }
-
-                    return ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
-                      itemCount: filteredProducts.length,
-                      itemBuilder: (context, index) {
-                        final product = filteredProducts[index];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: ProductCard(
-                            product: product,
-                            onEdit: () => _openEditProductDialog(product, categories),
-                            onDelete: () => _handleDeleteProduct(product),
-                            onOpenCart: _openCartModal,
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
               ),
             ],
-          ),
+          );
+        },
+      ),
           floatingActionButton: FloatingActionButton.extended(
             onPressed: () => _openAddProductDialog(categories),
             icon: const Icon(Icons.add),

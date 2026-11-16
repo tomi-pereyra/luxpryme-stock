@@ -19,6 +19,7 @@ class StockAdjustDialog extends StatefulWidget {
 
 class _StockAdjustDialogState extends State<StockAdjustDialog> {
   final _amountController = TextEditingController(text: '1');
+  final _pinController = TextEditingController();
   bool _isAddition = true;
   bool _isLoading = false;
   String? _errorMessage;
@@ -26,6 +27,7 @@ class _StockAdjustDialogState extends State<StockAdjustDialog> {
   @override
   void dispose() {
     _amountController.dispose();
+    _pinController.dispose();
     super.dispose();
   }
 
@@ -34,6 +36,14 @@ class _StockAdjustDialogState extends State<StockAdjustDialog> {
     if (amount == null || amount <= 0) {
       setState(() {
         _errorMessage = 'Informe um valor numérico maior que 0.';
+      });
+      return;
+    }
+
+    final pin = _pinController.text.trim();
+    if (pin.length != 4) {
+      setState(() {
+        _errorMessage = 'Informe seu PIN de 4 dígitos para autorizar a movimentação.';
       });
       return;
     }
@@ -59,6 +69,7 @@ class _StockAdjustDialogState extends State<StockAdjustDialog> {
         productId: widget.product.id,
         currentQuantity: widget.product.quantity,
         delta: delta,
+        pin: pin,
       );
       if (mounted) {
         Navigator.of(context).pop(true);
@@ -282,6 +293,30 @@ class _StockAdjustDialogState extends State<StockAdjustDialog> {
                   child: Text('$numVal un', style: const TextStyle(fontSize: 11)),
                 );
               }).toList(),
+            ),
+
+            const SizedBox(height: 16),
+            Text(
+              'PIN de 4 dígitos do Operador *',
+              style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _pinController,
+              keyboardType: TextInputType.number,
+              obscureText: true,
+              maxLength: 4,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(4),
+              ],
+              style: GoogleFonts.robotoMono(fontSize: 18, fontWeight: FontWeight.w700, letterSpacing: 8),
+              decoration: InputDecoration(
+                counterText: '',
+                prefixIcon: const Icon(Icons.lock_outline, size: 20),
+                hintText: '••••',
+                hintStyle: GoogleFonts.robotoMono(letterSpacing: 8),
+              ),
             ),
 
             if (_errorMessage != null) ...[

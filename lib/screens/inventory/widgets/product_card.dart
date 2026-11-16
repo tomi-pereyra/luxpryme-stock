@@ -5,6 +5,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../data/models/product_model.dart';
 import '../../../data/services/inventory_service.dart';
 import 'add_to_cart_dialog.dart';
+import 'pin_confirmation_dialog.dart';
 
 class ProductCard extends StatelessWidget {
   final ProductModel product;
@@ -32,7 +33,7 @@ class ProductCard extends StatelessWidget {
     return 'NORMAL';
   }
 
-  /// Ajuste rápido 1 por 1 instantâneo e sem senha
+  /// Ajuste rápido unitário com solicitação obrigatória de PIN de 4 dígitos
   Future<void> _quickChangeStock(BuildContext context, int delta) async {
     if (delta < 0 && product.quantity <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -45,11 +46,34 @@ class ProductCard extends StatelessWidget {
       return;
     }
 
+    final pin = await PinConfirmationDialog.show(
+      context,
+      product: product,
+      delta: delta,
+    );
+
+    if (pin == null) return; // Usuário cancelou
+
     try {
       await InventoryService.instance.quickAdjustUnit(
         product: product,
         delta: delta,
+        pin: pin,
       );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: delta > 0 ? AppColors.stockNormal : AppColors.primary,
+            content: Text(
+              delta > 0
+                  ? '+1 unidade registrada com sucesso no histórico!'
+                  : '-1 unidade retirada registrada com sucesso no histórico!',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+            ),
+            duration: const Duration(milliseconds: 1500),
+          ),
+        );
+      }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -69,12 +93,18 @@ class ProductCard extends StatelessWidget {
     final categoryNames = product.categoryNames ?? [];
 
     return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: AppColors.border),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // Linha Superior: Tags de Categorias Múltiplas e Status
+            // Linha Superior: Tags de Categorias Múltiplas, Sub-categoria e Status
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -83,41 +113,66 @@ class ProductCard extends StatelessWidget {
                   child: Wrap(
                     spacing: 6,
                     runSpacing: 4,
-                    children: categoryNames.isEmpty
-                        ? [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: AppColors.primaryContainer,
-                                borderRadius: BorderRadius.circular(6),
+                    children: [
+                      if (categoryNames.isEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryContainer,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            'Sem Categoria',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        )
+                      else
+                        ...categoryNames.map((cName) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryContainer,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              cName,
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.primary,
                               ),
-                              child: Text(
-                                'Sem Categoria',
+                            ),
+                          );
+                        }),
+                      if (product.subcategory != null && product.subcategory!.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.background,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: AppColors.border),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.subdirectory_arrow_right, size: 10, color: AppColors.textSecondary),
+                              const SizedBox(width: 3),
+                              Text(
+                                product.subcategory!,
                                 style: GoogleFonts.inter(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
-                                  color: AppColors.primary,
+                                  color: AppColors.textSecondary,
                                 ),
                               ),
-                            )
-                          ]
-                        : categoryNames.map((cName) {
-                            return Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: AppColors.primaryContainer,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                cName,
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.primary,
-                                ),
-                              ),
-                            );
-                          }).toList(),
+                            ],
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -243,15 +298,19 @@ class ProductCard extends StatelessWidget {
               ),
             ],
 
-            const Divider(height: 20, color: AppColors.border),
+            const Divider(height: 16, color: AppColors.border),
 
-            // Controles de Estoque
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            // Controles de Estoque Responsivos (com Wrap para evitar overflow em larguras compactas)
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 10,
+              runSpacing: 8,
               children: [
                 // Saldo em Estoque
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       'ESTOQUE DISPONÍVEL',
@@ -264,13 +323,14 @@ class ProductCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Row(
+                      mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.baseline,
                       textBaseline: TextBaseline.alphabetic,
                       children: [
                         Text(
                           NumberFormat('#,###', 'pt_BR').format(product.quantity),
                           style: GoogleFonts.inter(
-                            fontSize: 22,
+                            fontSize: 20,
                             fontWeight: FontWeight.w800,
                             color: statusColor,
                           ),
@@ -279,13 +339,13 @@ class ProductCard extends StatelessWidget {
                         Text(
                           'un',
                           style: GoogleFonts.inter(
-                            fontSize: 13,
+                            fontSize: 12,
                             fontWeight: FontWeight.w500,
                             color: AppColors.textSecondary,
                           ),
                         ),
                         if (product.minQuantity > 0) ...[
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 6),
                           Text(
                             '(Mín: ${product.minQuantity})',
                             style: GoogleFonts.inter(
@@ -299,18 +359,19 @@ class ProductCard extends StatelessWidget {
                   ],
                 ),
 
-                // Controles Rápidos: [-1 Instantâneo] | [Pegar no Carrinho] | [+1 Instantâneo]
+                // Controles Rápidos: [-1] | [Pegar no Carrinho] | [+1]
                 Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Botão Instantâneo -1 (Sem popup nem senha)
+                    // Botão Instantâneo -1 (com PIN)
                     InkWell(
                       onTap: product.quantity > 0
                           ? () => _quickChangeStock(context, -1)
                           : null,
                       borderRadius: BorderRadius.circular(8),
                       child: Container(
-                        width: 38,
-                        height: 38,
+                        width: 36,
+                        height: 36,
                         decoration: BoxDecoration(
                           color: product.quantity > 0
                               ? Colors.grey.shade100
@@ -320,14 +381,14 @@ class ProductCard extends StatelessWidget {
                         ),
                         child: Icon(
                           Icons.remove,
-                          size: 20,
+                          size: 18,
                           color: product.quantity > 0
                               ? AppColors.textPrimary
                               : AppColors.textMuted,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
 
                     // Botão "Pegar / Movimentar" -> Abre diálogo para colocar no Carrinho
                     ElevatedButton.icon(
@@ -335,8 +396,8 @@ class ProductCard extends StatelessWidget {
                         backgroundColor: AppColors.primaryContainer,
                         foregroundColor: AppColors.primaryDark,
                         elevation: 0,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        minimumSize: const Size(0, 38),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        minimumSize: const Size(0, 36),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                           side: const BorderSide(color: AppColors.primaryLight),
@@ -351,7 +412,7 @@ class ProductCard extends StatelessWidget {
                           ),
                         );
                       },
-                      icon: const Icon(Icons.add_shopping_cart, size: 16),
+                      icon: const Icon(Icons.add_shopping_cart, size: 15),
                       label: Text(
                         'Pegar...',
                         style: GoogleFonts.inter(
@@ -360,15 +421,15 @@ class ProductCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
 
-                    // Botão Instantâneo +1 (Sem popup nem senha)
+                    // Botão Instantâneo +1 (com PIN)
                     InkWell(
                       onTap: () => _quickChangeStock(context, 1),
                       borderRadius: BorderRadius.circular(8),
                       child: Container(
-                        width: 38,
-                        height: 38,
+                        width: 36,
+                        height: 36,
                         decoration: BoxDecoration(
                           color: AppColors.primaryContainer,
                           borderRadius: BorderRadius.circular(8),
@@ -376,7 +437,7 @@ class ProductCard extends StatelessWidget {
                         ),
                         child: const Icon(
                           Icons.add,
-                          size: 20,
+                          size: 18,
                           color: AppColors.primary,
                         ),
                       ),
