@@ -575,6 +575,28 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 },
               ),
 
+              // Sincronizar Estoque
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                tooltip: 'Sincronizar Estoque',
+                onPressed: () async {
+                  final messenger = ScaffoldMessenger.of(context);
+                  try {
+                    await InventoryService.instance.fetchProducts();
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text('Estoque sincronizado com sucesso.'),
+                        duration: Duration(seconds: 1),
+                      ),
+                    );
+                  } catch (e) {
+                    messenger.showSnackBar(
+                      SnackBar(content: Text('Erro ao atualizar: $e')),
+                    );
+                  }
+                },
+              ),
+
               // Logout
               IconButton(
                 icon: const Icon(Icons.logout_outlined, color: AppColors.stockZero),
@@ -789,7 +811,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
               Expanded(
                 child: prodSnapshot.connectionState == ConnectionState.waiting
                     ? const Center(child: CircularProgressIndicator())
-                    : filteredProducts.isEmpty
+                    : RefreshIndicator(
+                        onRefresh: () => InventoryService.instance.fetchProducts(),
+                        child: filteredProducts.isEmpty
                         ? Center(
                             child: SingleChildScrollView(
                               padding: const EdgeInsets.all(32),
@@ -883,6 +907,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                               );
                             },
                           ),
+                      ),
               ),
             ],
           );

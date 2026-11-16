@@ -273,17 +273,115 @@ class InventoryService {
   // PRODUTOS
   // ---------------------------------------------------------------------------
 
+  bool _isLoadingProducts = false;
+  List<ProductModel> _allProducts = [];
+  RealtimeChannel? _productsRealtimeChannel;
+
   Stream<List<ProductModel>> streamProducts() {
     if (_isLocalMode || _client == null) {
       Timer.run(() => _productsStreamController.add(_localProducts));
       return _productsStreamController.stream;
     }
 
-    return _client!
-        .from(AppConstants.tableProducts)
-        .stream(primaryKey: ['id'])
-        .order('name', ascending: true)
-        .map((records) => records.map((e) => ProductModel.fromMap(e)).toList());
+    // Se já temos produtos carregados na memória, emite imediatamente
+    if (_allProducts.isNotEmpty) {
+      Timer.run(() => _productsStreamController.add(List.unmodifiable(_allProducts)));
+    }
+
+    // Dispara a carga de todas as páginas no Supabase (superando o limite de 1000)
+    fetchProducts();
+
+    // Inscreve no canal realtime para receber alterações incrementais
+    _subscribeProductsRealtime();
+
+    return _productsStreamController.stream;
+  }
+
+  Future<List<ProductModel>> fetchProducts() async {
+    if (_isLocalMode || _client == null) {
+      return _localProducts;
+    }
+    if (_isLoadingProducts) return _allProducts;
+    _isLoadingProducts = true;
+
+    try {
+      final List<ProductModel> loaded = [];
+      int from = 0;
+      const int pageSize = 1000;
+
+      while (true) {
+        final res = await _client!
+            .from(AppConstants.tableProducts)
+            .select()
+            .order('name', ascending: true)
+            .range(from, from + pageSize - 1);
+
+        final items = (res as List)
+            .map((e) => ProductModel.fromMap(e as Map<String, dynamic>))
+            .toList();
+
+        loaded.addAll(items);
+        if (items.length < pageSize) break;
+        from += pageSize;
+      }
+
+      _allProducts = loaded;
+      if (!_productsStreamController.isClosed) {
+        _productsStreamController.add(List.unmodifiable(_allProducts));
+      }
+      return _allProducts;
+    } catch (e) {
+      debugPrint('Erro ao carregar catálogo completo de produtos: $e');
+      rethrow;
+    } finally {
+      _isLoadingProducts = false;
+    }
+  }
+
+  void _subscribeProductsRealtime() {
+    if (_productsRealtimeChannel != null || _client == null) return;
+
+    _productsRealtimeChannel = _client!
+        .channel('public:products_live')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: AppConstants.tableProducts,
+          callback: (payload) {
+            final record = payload.newRecord;
+            final oldRecord = payload.oldRecord;
+
+            if (payload.eventType == PostgresChangeEvent.insert && record.isNotEmpty) {
+              final newP = ProductModel.fromMap(record);
+              _allProducts.removeWhere((p) => p.id == newP.id);
+              _allProducts.insert(0, newP);
+              _allProducts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+              if (!_productsStreamController.isClosed) {
+                _productsStreamController.add(List.unmodifiable(_allProducts));
+              }
+            } else if (payload.eventType == PostgresChangeEvent.update && record.isNotEmpty) {
+              final updatedP = ProductModel.fromMap(record);
+              final idx = _allProducts.indexWhere((p) => p.id == updatedP.id);
+              if (idx != -1) {
+                _allProducts[idx] = updatedP;
+              } else {
+                _allProducts.add(updatedP);
+              }
+              if (!_productsStreamController.isClosed) {
+                _productsStreamController.add(List.unmodifiable(_allProducts));
+              }
+            } else if (payload.eventType == PostgresChangeEvent.delete && oldRecord.isNotEmpty) {
+              final delId = oldRecord['id']?.toString();
+              if (delId != null) {
+                _allProducts.removeWhere((p) => p.id == delId);
+                if (!_productsStreamController.isClosed) {
+                  _productsStreamController.add(List.unmodifiable(_allProducts));
+                }
+              }
+            }
+          },
+        )
+        .subscribe();
   }
 
   Future<void> createProduct(ProductModel product, {String? pin}) async {
