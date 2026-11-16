@@ -1,0 +1,341 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../core/constants/app_colors.dart';
+import '../../data/models/operator_pin_model.dart';
+import '../../data/services/inventory_service.dart';
+
+class AdminPanelScreen extends StatefulWidget {
+  const AdminPanelScreen({super.key});
+
+  @override
+  State<AdminPanelScreen> createState() => _AdminPanelScreenState();
+}
+
+class _AdminPanelScreenState extends State<AdminPanelScreen> {
+  final _nameController = TextEditingController();
+  final _pinController = TextEditingController();
+
+  bool _isCreating = false;
+  String? _errorMessage;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _pinController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleCreatePin() async {
+    final name = _nameController.text.trim();
+    final pin = _pinController.text.trim();
+
+    if (name.isEmpty) {
+      setState(() => _errorMessage = 'Informe o nome do operador ou setor.');
+      return;
+    }
+    if (pin.length != 4 || int.tryParse(pin) == null) {
+      setState(() => _errorMessage = 'O PIN deve conter exatamente 4 dígitos numéricos.');
+      return;
+    }
+
+    setState(() {
+      _isCreating = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await InventoryService.instance.createOperatorPin(name: name, pin: pin);
+      _nameController.clear();
+      _pinController.clear();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.stockNormal,
+            content: Text(
+              'PIN para "$name" cadastrado com sucesso!',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString().replaceAll('Exception: ', '');
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _isCreating = false);
+      }
+    }
+  }
+
+  Future<void> _handleDeletePin(OperatorPinModel pinModel) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remover Autorização?'),
+        content: Text(
+          'Deseja realmente revogar e excluir o PIN do operador "${pinModel.name}"?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.stockZero),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Revogar PIN'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      await InventoryService.instance.deleteOperatorPin(pinModel.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.stockNormal,
+            content: Text('PIN de "${pinModel.name}" excluído.'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.stockZero,
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppColors.primaryContainer,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Icon(Icons.admin_panel_settings, color: AppColors.primary, size: 20),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Painel do Administrador (Windows Desktop)',
+              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 900),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Card de Introdução
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.security, size: 36, color: AppColors.primary),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Gestão de PINs de Segurança para Retirada de Estoque',
+                              style: GoogleFonts.inter(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Cadastre os PINs de 4 dígitos que os operadores, técnicos e monitores de linha usarão para autorizar a baixa de componentes e placas no carrinho de separação.',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Formulário de Cadastro de Novo PIN
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Cadastrar Novo Operador / PIN Autorizado',
+                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: TextField(
+                              controller: _nameController,
+                              decoration: const InputDecoration(
+                                labelText: 'Nome do Operador ou Setor',
+                                hintText: 'Ex: Tomas (Supervisor), Roberto (Monitor), Linha SMD',
+                                prefixIcon: Icon(Icons.person_outline),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: TextField(
+                              controller: _pinController,
+                              keyboardType: TextInputType.number,
+                              maxLength: 4,
+                              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                              decoration: const InputDecoration(
+                                labelText: 'PIN (4 dígitos)',
+                                hintText: 'Ex: 2026',
+                                counterText: '',
+                                prefixIcon: Icon(Icons.pin_outlined),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                            ),
+                            icon: _isCreating
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2, color: Colors.white),
+                                  )
+                                : const Icon(Icons.add_moderator),
+                            label: Text(
+                              _isCreating ? 'Salvando...' : 'Cadastrar PIN',
+                              style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                            ),
+                            onPressed: _isCreating ? null : _handleCreatePin,
+                          ),
+                        ],
+                      ),
+                      if (_errorMessage != null) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          _errorMessage!,
+                          style: GoogleFonts.inter(fontSize: 12, color: AppColors.stockZero),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Lista de PINs Cadastrados
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'PINs Autorizados Atualmente:',
+                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 12),
+                      StreamBuilder<List<OperatorPinModel>>(
+                        stream: InventoryService.instance.streamOperatorPins(),
+                        builder: (context, snapshot) {
+                          final pins = snapshot.data ?? [];
+                          if (pins.isEmpty) {
+                            return const Padding(
+                              padding: EdgeInsets.all(24),
+                              child: Center(
+                                child: Text('Nenhum PIN cadastrado.'),
+                              ),
+                            );
+                          }
+
+                          return ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: pins.length,
+                            separatorBuilder: (_, _) =>
+                                const Divider(height: 1, color: AppColors.border),
+                            itemBuilder: (context, index) {
+                              final p = pins[index];
+                              return ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: AppColors.primaryContainer,
+                                  child: const Icon(Icons.vpn_key,
+                                      size: 18, color: AppColors.primary),
+                                ),
+                                title: Text(
+                                  p.name,
+                                  style: GoogleFonts.inter(
+                                      fontSize: 14, fontWeight: FontWeight.w700),
+                                ),
+                                subtitle: Text(
+                                  'PIN: ${p.pin} • Autorizado para Baixa em Carrinho',
+                                  style: GoogleFonts.inter(
+                                      fontSize: 12, color: AppColors.textSecondary),
+                                ),
+                                trailing: IconButton(
+                                  icon: const Icon(Icons.delete_outline,
+                                      color: AppColors.stockZero),
+                                  tooltip: 'Revogar este PIN',
+                                  onPressed: () => _handleDeletePin(p),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
