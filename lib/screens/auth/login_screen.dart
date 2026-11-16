@@ -91,10 +91,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     // Identidade Visual Luxpryme
-                    // Logotipo: Letra "L" azul médio sobre fundo branco destacado
+                    // Logotipo: Letra "L" branca sobre fundo azul destacado
                     const LuxLogo(
                       size: 80,
-                      variant: LuxLogoVariant.blueOnWhite,
+                      variant: LuxLogoVariant.whiteOnBlue,
                       showBrandName: true,
                       isDarkBackground: true,
                     ),

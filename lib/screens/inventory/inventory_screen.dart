@@ -271,7 +271,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
               padding: EdgeInsets.only(left: 16),
               child: LuxLogo(
                 size: 34,
-                variant: LuxLogoVariant.blueOnWhite,
+                variant: LuxLogoVariant.whiteOnBlue,
                 showBrandName: false,
               ),
             ),

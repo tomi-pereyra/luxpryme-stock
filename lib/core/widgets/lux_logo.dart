@@ -3,11 +3,11 @@ import 'package:google_fonts/google_fonts.dart';
 import '../constants/app_colors.dart';
 
 enum LuxLogoVariant {
-  /// Letra 'L' azul médio em fundo branco (conforme especificação principal)
-  blueOnWhite,
-
-  /// Letra 'L' branca em fundo azul médio
+  /// Letra 'L' branca em fundo azul médio (identidade oficial do aplicativo)
   whiteOnBlue,
+
+  /// Letra 'L' azul médio em fundo branco
+  blueOnWhite,
 }
 
 class LuxLogo extends StatelessWidget {
@@ -19,16 +19,16 @@ class LuxLogo extends StatelessWidget {
   const LuxLogo({
     super.key,
     this.size = 72,
-    this.variant = LuxLogoVariant.blueOnWhite,
+    this.variant = LuxLogoVariant.whiteOnBlue,
     this.showBrandName = true,
     this.isDarkBackground = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final bool isBlueOnWhite = variant == LuxLogoVariant.blueOnWhite;
-    final Color bgColor = isBlueOnWhite ? Colors.white : AppColors.primary;
-    final Color letterColor = isBlueOnWhite ? AppColors.primary : Colors.white;
+    final bool isWhiteOnBlue = variant == LuxLogoVariant.whiteOnBlue;
+    final Color bgColor = isWhiteOnBlue ? AppColors.primary : Colors.white;
+    final Color letterColor = isWhiteOnBlue ? Colors.white : AppColors.primary;
 
     final Color titleColor = isDarkBackground ? Colors.white : AppColors.textPrimary;
     final Color subtitleColor = isDarkBackground ? Colors.white70 : AppColors.textSecondary;
@@ -37,19 +37,24 @@ class LuxLogo extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // Símbolo do Logotipo: "L" destacado e minimalista
+        // Símbolo do Logotipo: "L" branco destacado em fundo azul
         Container(
           width: size,
           height: size,
           decoration: BoxDecoration(
             color: bgColor,
             borderRadius: BorderRadius.circular(size * 0.22),
-            border: isBlueOnWhite
-                ? Border.all(color: AppColors.border, width: 1.5)
-                : null,
+            border: isWhiteOnBlue
+                ? Border.all(
+                    color: isDarkBackground
+                        ? Colors.white.withValues(alpha: 0.3)
+                        : AppColors.primaryDark.withValues(alpha: 0.15),
+                    width: 1.5,
+                  )
+                : Border.all(color: AppColors.border, width: 1.5),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.08),
+                color: Colors.black.withValues(alpha: 0.12),
                 blurRadius: 14,
                 offset: const Offset(0, 4),
               ),
