@@ -99,6 +99,33 @@ class ProductModel {
       parsedSubcategories = [map['subcategory'].toString().trim()];
     }
 
+    // Se o banco ainda não possuir a coluna subcategories, lê do fallback transparente em notes
+    String? rawNotes = map['notes']?.toString();
+    String? cleanNotes = rawNotes;
+    if (parsedSubcategories.isEmpty && rawNotes != null) {
+      final match = RegExp(r'\[subcats?:([^\]]+)\]').firstMatch(rawNotes);
+      if (match != null) {
+        final subsStr = match.group(1);
+        if (subsStr != null && subsStr.trim().isNotEmpty) {
+          if (subsStr.contains(';;')) {
+            parsedSubcategories = subsStr
+                .split(';;')
+                .map((s) => s.trim())
+                .where((s) => s.isNotEmpty)
+                .toList();
+          } else {
+            parsedSubcategories = subsStr
+                .split(',')
+                .map((s) => s.trim())
+                .where((s) => s.isNotEmpty)
+                .toList();
+          }
+        }
+        cleanNotes = rawNotes.replaceAll(RegExp(r'\s*\[subcats?:[^\]]*\]'), '').trim();
+        if (cleanNotes.isEmpty) cleanNotes = null;
+      }
+    }
+
     return ProductModel(
       id: map['id']?.toString() ?? '',
       name: map['name']?.toString() ?? '',
@@ -111,7 +138,7 @@ class ProductModel {
       quantity: (map['quantity'] as num?)?.toInt() ?? 0,
       minQuantity: (map['min_quantity'] as num?)?.toInt() ?? 10,
       location: map['location']?.toString(),
-      notes: map['notes']?.toString(),
+      notes: cleanNotes,
       createdAt: map['created_at'] != null
           ? DateTime.tryParse(map['created_at'].toString())
           : null,

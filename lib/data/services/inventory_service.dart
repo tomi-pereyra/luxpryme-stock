@@ -302,7 +302,38 @@ class InventoryService {
       return;
     }
 
-    await _client!.from(AppConstants.tableProducts).insert(newProduct.toMap());
+    final payload = newProduct.toMap();
+    try {
+      await _client!.from(AppConstants.tableProducts).insert(payload);
+    } catch (e) {
+      // Fallback gracioso caso a coluna subcategories ainda não exista no Supabase
+      if (e.toString().contains('subcategories') || e.toString().contains('PGRST204')) {
+        payload.remove('subcategories');
+        try {
+          await _client!.from(AppConstants.tableProducts).insert(payload);
+        } catch (e2) {
+          if (e2.toString().contains('subcategory') || e2.toString().contains('PGRST204')) {
+            payload.remove('subcategory');
+            final currentNotes = newProduct.notes ?? '';
+            final cleanNotes =
+                currentNotes.replaceAll(RegExp(r'\s*\[subcats?:[^\]]*\]'), '').trim();
+            final tag = newProduct.subcategories.isNotEmpty
+                ? ' [subcats:${newProduct.subcategories.join(";;")}]'
+                : '';
+            payload['notes'] = cleanNotes.isEmpty
+                ? (tag.isEmpty ? null : tag.trim())
+                : '$cleanNotes$tag';
+
+            await _client!.from(AppConstants.tableProducts).insert(payload);
+          } else {
+            rethrow;
+          }
+        }
+      } else {
+        rethrow;
+      }
+    }
+
     if (newProduct.quantity > 0) {
       try {
         await _client!.from('stock_movements').insert(movement.toMap());
@@ -326,10 +357,46 @@ class InventoryService {
       return;
     }
 
-    await _client!
-        .from(AppConstants.tableProducts)
-        .update(product.toMap())
-        .eq('id', product.id);
+    final payload = product.toMap();
+    try {
+      await _client!
+          .from(AppConstants.tableProducts)
+          .update(payload)
+          .eq('id', product.id);
+    } catch (e) {
+      // Fallback gracioso caso a coluna subcategories ainda não exista no Supabase
+      if (e.toString().contains('subcategories') || e.toString().contains('PGRST204')) {
+        payload.remove('subcategories');
+        try {
+          await _client!
+              .from(AppConstants.tableProducts)
+              .update(payload)
+              .eq('id', product.id);
+        } catch (e2) {
+          if (e2.toString().contains('subcategory') || e2.toString().contains('PGRST204')) {
+            payload.remove('subcategory');
+            final currentNotes = product.notes ?? '';
+            final cleanNotes =
+                currentNotes.replaceAll(RegExp(r'\s*\[subcats?:[^\]]*\]'), '').trim();
+            final tag = product.subcategories.isNotEmpty
+                ? ' [subcats:${product.subcategories.join(";;")}]'
+                : '';
+            payload['notes'] = cleanNotes.isEmpty
+                ? (tag.isEmpty ? null : tag.trim())
+                : '$cleanNotes$tag';
+
+            await _client!
+                .from(AppConstants.tableProducts)
+                .update(payload)
+                .eq('id', product.id);
+          } else {
+            rethrow;
+          }
+        }
+      } else {
+        rethrow;
+      }
+    }
   }
 
   Future<void> deleteProduct(String productId, {String? pin}) async {

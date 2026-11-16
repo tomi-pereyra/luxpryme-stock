@@ -47,6 +47,8 @@ CREATE TABLE IF NOT EXISTS public.products (
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS internal_code TEXT;
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS manufacturer_code TEXT;
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS category_ids UUID[] DEFAULT ARRAY[]::UUID[];
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS subcategories TEXT[] DEFAULT ARRAY[]::TEXT[];
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS subcategory TEXT;
 
 -- 3. Tabela de PINs de Operadores para Baixa no Carrinho
 CREATE TABLE IF NOT EXISTS public.operator_pins (
