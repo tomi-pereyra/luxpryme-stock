@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:luxpryme_stock/data/models/product_model.dart';
 import 'package:luxpryme_stock/data/models/category_model.dart';
 import 'package:luxpryme_stock/data/models/stock_movement_model.dart';
+import 'package:luxpryme_stock/data/services/inventory_service.dart';
 
 void main() {
   group('Tokenized Unordered Search Tests', () {
@@ -104,6 +105,12 @@ void main() {
 
       expect(cartMov.type.startsWith('CART_'), isTrue);
       expect(directMov.type.startsWith('CART_'), isFalse);
+    });
+  });
+
+  group('Admin Access Control Tests', () {
+    test('Validação de e-mail de administrador configurado', () {
+      expect(InventoryService.adminEmail, equals('tomibr20@gmail.com'));
     });
   });
 }

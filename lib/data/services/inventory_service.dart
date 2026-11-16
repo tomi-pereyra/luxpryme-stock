@@ -136,8 +136,25 @@ class InventoryService {
   }
 
   // ---------------------------------------------------------------------------
-  // AUTENTICAÇÃO
+  // AUTENTICAÇÃO E CONTROLE DE ACESSO DO ADMINISTRADOR
   // ---------------------------------------------------------------------------
+
+  static const String adminEmail = 'tomibr20@gmail.com';
+
+  String? get currentUserEmail {
+    if (_client != null) {
+      return _client!.auth.currentUser?.email;
+    }
+    return null;
+  }
+
+  bool get isAdminUser {
+    final email = currentUserEmail?.trim().toLowerCase();
+    if (email == adminEmail) return true;
+    // Permite em modo local puro (sem conexão Supabase) apenas para testes locais
+    if (_isLocalMode && email == null) return true;
+    return false;
+  }
 
   Future<AuthResponse?> signIn({
     required String email,

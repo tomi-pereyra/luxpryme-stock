@@ -345,11 +345,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 },
               ),
 
-              // Botão Painel do Administrador (Exclusivo Windows)
-              if (isWindowsDesktop) ...[
+              // Botão Painel do Administrador (Exclusivo Windows e restrito para tomibr20@gmail.com)
+              if (isWindowsDesktop && InventoryService.instance.isAdminUser) ...[
                 IconButton(
                   icon: const Icon(Icons.admin_panel_settings_outlined, color: AppColors.primary),
-                  tooltip: 'Painel do Administrador (Gerenciar PINs)',
+                  tooltip: 'Painel do Administrador (Exclusivo tomibr20@gmail.com)',
                   onPressed: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
