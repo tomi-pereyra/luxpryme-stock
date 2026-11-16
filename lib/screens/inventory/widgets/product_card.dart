@@ -5,7 +5,6 @@ import '../../../core/constants/app_colors.dart';
 import '../../../data/models/product_model.dart';
 import '../../../data/services/inventory_service.dart';
 import 'add_to_cart_dialog.dart';
-import 'pin_confirmation_dialog.dart';
 
 class ProductCard extends StatelessWidget {
   final ProductModel product;
@@ -33,7 +32,7 @@ class ProductCard extends StatelessWidget {
     return 'NORMAL';
   }
 
-  /// Ajuste rápido unitário com solicitação obrigatória de PIN de 4 dígitos
+  /// Ajuste rápido unitário instantâneo (+1 e -1 direto, sem pedir PIN)
   Future<void> _quickChangeStock(BuildContext context, int delta) async {
     if (delta < 0 && product.quantity <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -46,19 +45,10 @@ class ProductCard extends StatelessWidget {
       return;
     }
 
-    final pin = await PinConfirmationDialog.show(
-      context,
-      product: product,
-      delta: delta,
-    );
-
-    if (pin == null) return; // Usuário cancelou
-
     try {
       await InventoryService.instance.quickAdjustUnit(
         product: product,
         delta: delta,
-        pin: pin,
       );
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -66,11 +56,11 @@ class ProductCard extends StatelessWidget {
             backgroundColor: delta > 0 ? AppColors.stockNormal : AppColors.primary,
             content: Text(
               delta > 0
-                  ? '+1 unidade registrada com sucesso no histórico!'
-                  : '-1 unidade retirada registrada com sucesso no histórico!',
+                  ? '+1 unidade registrada no histórico!'
+                  : '-1 unidade registrada no histórico!',
               style: GoogleFonts.inter(fontWeight: FontWeight.w600),
             ),
-            duration: const Duration(milliseconds: 1500),
+            duration: const Duration(milliseconds: 1200),
           ),
         );
       }

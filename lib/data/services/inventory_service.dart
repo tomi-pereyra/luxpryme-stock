@@ -257,25 +257,59 @@ class InventoryService {
         .map((records) => records.map((e) => ProductModel.fromMap(e)).toList());
   }
 
-  Future<void> createProduct(ProductModel product) async {
+  Future<void> createProduct(ProductModel product, {String? pin}) async {
     if (product.quantity < 0) {
       throw Exception('A quantidade inicial não pode ser negativa.');
     }
 
+    String operatorName = 'Administrador';
+    if (pin != null && pin.isNotEmpty) {
+      final op = await validatePin(pin);
+      if (op != null) operatorName = op.name;
+    }
+
+    final newProduct = product.copyWith(
+      id: product.id.isEmpty
+          ? 'prod-${DateTime.now().millisecondsSinceEpoch}'
+          : product.id,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+
+    final movement = StockMovementModel(
+      id: 'mov-${DateTime.now().microsecondsSinceEpoch}',
+      productId: newProduct.id,
+      productName: newProduct.name,
+      productCode: newProduct.code,
+      internalCode: newProduct.internalCode,
+      manufacturerCode: newProduct.manufacturerCode,
+      categoryNames: newProduct.categoryNames ?? [],
+      delta: newProduct.quantity,
+      previousQuantity: 0,
+      newQuantity: newProduct.quantity,
+      type: 'PRODUCT_CREATE',
+      operatorName: operatorName,
+      pinUsed: pin != null && pin.isNotEmpty ? '****' : null,
+      createdAt: DateTime.now(),
+    );
+
     if (_isLocalMode || _client == null) {
-      final newProduct = product.copyWith(
-        id: product.id.isEmpty
-            ? 'prod-${DateTime.now().millisecondsSinceEpoch}'
-            : product.id,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
       _localProducts.insert(0, newProduct);
+      if (newProduct.quantity > 0) {
+        _localMovements.insert(0, movement);
+      }
       _notifyLocal();
       return;
     }
 
-    await _client!.from(AppConstants.tableProducts).insert(product.toMap());
+    await _client!.from(AppConstants.tableProducts).insert(newProduct.toMap());
+    if (newProduct.quantity > 0) {
+      try {
+        await _client!.from('stock_movements').insert(movement.toMap());
+      } catch (e) {
+        debugPrint('Aviso: falha ao gravar stock_movements no Supabase: $e');
+      }
+    }
   }
 
   Future<void> updateProduct(ProductModel product) async {
@@ -298,9 +332,40 @@ class InventoryService {
         .eq('id', product.id);
   }
 
-  Future<void> deleteProduct(String productId) async {
+  Future<void> deleteProduct(String productId, {String? pin}) async {
+    String operatorName = 'Administrador';
+    if (pin != null && pin.isNotEmpty) {
+      final op = await validatePin(pin);
+      if (op != null) operatorName = op.name;
+    }
+
+    // Procura o produto antes de remover para gravar no histórico
+    ProductModel? targetProduct;
+    if (_localProducts.any((p) => p.id == productId)) {
+      targetProduct = _localProducts.firstWhere((p) => p.id == productId);
+    }
+
     if (_isLocalMode || _client == null) {
       _localProducts.removeWhere((p) => p.id == productId);
+      if (targetProduct != null) {
+        final movement = StockMovementModel(
+          id: 'mov-${DateTime.now().microsecondsSinceEpoch}',
+          productId: targetProduct.id,
+          productName: targetProduct.name,
+          productCode: targetProduct.code,
+          internalCode: targetProduct.internalCode,
+          manufacturerCode: targetProduct.manufacturerCode,
+          categoryNames: targetProduct.categoryNames ?? [],
+          delta: -targetProduct.quantity,
+          previousQuantity: targetProduct.quantity,
+          newQuantity: 0,
+          type: 'PRODUCT_DELETE',
+          operatorName: operatorName,
+          pinUsed: pin != null && pin.isNotEmpty ? '****' : null,
+          createdAt: DateTime.now(),
+        );
+        _localMovements.insert(0, movement);
+      }
       _notifyLocal();
       return;
     }
@@ -312,17 +377,20 @@ class InventoryService {
   }
 
   // ---------------------------------------------------------------------------
-  // AJUSTE UNITÁRIO (+1 E -1) - COM VALIDAÇÃO DE PIN DE 4 DÍGITOS E HISTÓRICO
+  // AJUSTE UNITÁRIO (+1 E -1) - DIRETO E RÁPIDO COM REGISTRO NO HISTÓRICO
   // ---------------------------------------------------------------------------
 
   Future<int> quickAdjustUnit({
     required ProductModel product,
     required int delta, // +1 ou -1
-    required String pin,
+    String? pin,
   }) async {
-    final operatorPin = await validatePin(pin);
-    if (operatorPin == null) {
-      throw Exception('PIN de 4 dígitos incorreto ou não autorizado.');
+    String operatorName = 'Ajuste Unitário';
+    if (pin != null && pin.isNotEmpty) {
+      final operatorPin = await validatePin(pin);
+      if (operatorPin != null) {
+        operatorName = operatorPin.name;
+      }
     }
 
     final int newQuantity = product.quantity + delta;
@@ -344,8 +412,8 @@ class InventoryService {
       previousQuantity: product.quantity,
       newQuantity: newQuantity,
       type: delta > 0 ? 'UNIT_ADD' : 'UNIT_REMOVE',
-      operatorName: operatorPin.name,
-      pinUsed: '****',
+      operatorName: operatorName,
+      pinUsed: pin != null && pin.isNotEmpty ? '****' : null,
       createdAt: DateTime.now(),
     );
 

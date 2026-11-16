@@ -16,6 +16,7 @@ import 'widgets/categories_manage_dialog.dart';
 import 'widgets/category_filter_bar.dart';
 import 'widgets/product_card.dart';
 import 'widgets/product_form_dialog.dart';
+import 'widgets/pin_confirmation_dialog.dart';
 
 enum SortOption {
   nameAsc('Nome (A - Z)'),
@@ -115,47 +116,37 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   Future<void> _handleDeleteProduct(ProductModel product) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Excluir Produto'),
-        content: Text(
-          'Tem certeza que deseja remover o item "${product.name}" do estoque?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.stockZero),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Excluir'),
-          ),
-        ],
-      ),
+    // Exige autenticação por PIN de 4 dígitos para eliminar produto
+    final pin = await PinConfirmationDialog.show(
+      context,
+      title: 'Confirmar Exclusão',
+      subtitle: 'Para eliminar o item do estoque, digite seu PIN de 4 dígitos:',
+      itemName: product.name,
+      actionLabel: 'Excluir Produto',
+      actionColor: AppColors.stockZero,
+      actionIcon: Icons.delete_forever,
     );
 
-    if (confirm == true) {
-      try {
-        await InventoryService.instance.deleteProduct(product.id);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: AppColors.stockNormal,
-              content: Text('Item "${product.name}" excluído com sucesso.'),
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: AppColors.stockZero,
-              content: Text(e.toString().replaceAll('Exception: ', '')),
-            ),
-          );
-        }
+    if (pin == null) return; // Cancelado pelo usuário
+
+    try {
+      await InventoryService.instance.deleteProduct(product.id, pin: pin);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.stockNormal,
+            content: Text('Item "${product.name}" excluído com sucesso.'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.stockZero,
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+          ),
+        );
       }
     }
   }

@@ -2,28 +2,47 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../data/models/product_model.dart';
 import '../../../data/services/inventory_service.dart';
 
 class PinConfirmationDialog extends StatefulWidget {
-  final ProductModel product;
-  final int delta; // +1 ou -1
+  final String title;
+  final String subtitle;
+  final String? itemName;
+  final String actionLabel;
+  final Color actionColor;
+  final IconData actionIcon;
 
   const PinConfirmationDialog({
     super.key,
-    required this.product,
-    required this.delta,
+    required this.title,
+    required this.subtitle,
+    this.itemName,
+    required this.actionLabel,
+    this.actionColor = AppColors.primary,
+    this.actionIcon = Icons.lock_outline,
   });
 
+  /// Diálogo geral para solicitar PIN antes de adicionar ou eliminar produtos
   static Future<String?> show(
     BuildContext context, {
-    required ProductModel product,
-    required int delta,
+    required String title,
+    required String subtitle,
+    String? itemName,
+    required String actionLabel,
+    Color actionColor = AppColors.primary,
+    IconData actionIcon = Icons.lock_outline,
   }) {
     return showDialog<String>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => PinConfirmationDialog(product: product, delta: delta),
+      builder: (_) => PinConfirmationDialog(
+        title: title,
+        subtitle: subtitle,
+        itemName: itemName,
+        actionLabel: actionLabel,
+        actionColor: actionColor,
+        actionIcon: actionIcon,
+      ),
     );
   }
 
@@ -91,11 +110,6 @@ class _PinConfirmationDialogState extends State<PinConfirmationDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final isAddition = widget.delta > 0;
-    final actionColor = isAddition ? AppColors.stockNormal : AppColors.stockZero;
-    final actionTitle = isAddition ? 'Adicionar 1 Unidade' : 'Retirar 1 Unidade';
-    final actionIcon = isAddition ? Icons.add_circle_outline : Icons.remove_circle_outline;
-
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
@@ -106,10 +120,10 @@ class _PinConfirmationDialogState extends State<PinConfirmationDialog> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: actionColor.withValues(alpha: 0.12),
+              color: widget.actionColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(actionIcon, color: actionColor, size: 24),
+            child: Icon(widget.actionIcon, color: widget.actionColor, size: 24),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -117,24 +131,26 @@ class _PinConfirmationDialogState extends State<PinConfirmationDialog> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  actionTitle,
+                  widget.title,
                   style: GoogleFonts.inter(
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
                     color: AppColors.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  widget.product.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.textSecondary,
+                if (widget.itemName != null && widget.itemName!.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    widget.itemName!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textSecondary,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -148,7 +164,7 @@ class _PinConfirmationDialogState extends State<PinConfirmationDialog> {
           children: [
             const SizedBox(height: 8),
             Text(
-              'Digite seu PIN de 4 dígitos para confirmar a alteração no estoque:',
+              widget.subtitle,
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
             ),
@@ -188,7 +204,7 @@ class _PinConfirmationDialogState extends State<PinConfirmationDialog> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: actionColor, width: 2),
+                    borderSide: BorderSide(color: widget.actionColor, width: 2),
                   ),
                 ),
                 onChanged: (val) {
@@ -236,7 +252,7 @@ class _PinConfirmationDialogState extends State<PinConfirmationDialog> {
         ElevatedButton(
           onPressed: _isLoading ? null : _verifyAndSubmit,
           style: ElevatedButton.styleFrom(
-            backgroundColor: actionColor,
+            backgroundColor: widget.actionColor,
             foregroundColor: Colors.white,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
@@ -247,7 +263,7 @@ class _PinConfirmationDialogState extends State<PinConfirmationDialog> {
                   child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                 )
               : Text(
-                  'Confirmar',
+                  widget.actionLabel,
                   style: GoogleFonts.inter(fontWeight: FontWeight.w700),
                 ),
         ),

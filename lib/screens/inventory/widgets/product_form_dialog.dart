@@ -6,6 +6,7 @@ import '../../../data/models/category_model.dart';
 import '../../../data/models/product_model.dart';
 import '../../../data/services/inventory_service.dart';
 import 'categories_manage_dialog.dart';
+import 'pin_confirmation_dialog.dart';
 
 class ProductFormDialog extends StatefulWidget {
   final ProductModel? productToEdit;
@@ -148,7 +149,24 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       if (isEditing) {
         await InventoryService.instance.updateProduct(product);
       } else {
-        await InventoryService.instance.createProduct(product);
+        // Exige autenticação por PIN de 4 dígitos para cadastrar novo produto
+        final pin = await PinConfirmationDialog.show(
+          context,
+          title: 'Confirmar Cadastro',
+          subtitle: 'Digite seu PIN de 4 dígitos para autorizar a adição do novo produto:',
+          itemName: product.name,
+          actionLabel: 'Cadastrar',
+          actionColor: AppColors.primary,
+          actionIcon: Icons.add_box_outlined,
+        );
+
+        if (pin == null) {
+          // Cancelado pelo usuário
+          setState(() => _isLoading = false);
+          return;
+        }
+
+        await InventoryService.instance.createProduct(product, pin: pin);
       }
 
       if (mounted) {
