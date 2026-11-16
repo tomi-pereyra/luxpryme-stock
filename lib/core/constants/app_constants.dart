@@ -13,4 +13,7 @@ class AppConstants {
   // Nomes das Tabelas
   static const String tableCategories = 'categories';
   static const String tableProducts = 'products';
+  static const String tableMasterCategories = 'master_categories';
+  static const String tableOperatorPins = 'operator_pins';
+  static const String tableStockMovements = 'stock_movements';
 }

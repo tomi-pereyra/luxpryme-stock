@@ -416,62 +416,37 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         child: Wrap(
                           spacing: 8,
                           runSpacing: 8,
-                          children: [
-                            FilterChip(
-                              label: const Text('Eletrônica'),
-                              selected: _selectedMasterCategories.contains('eletronica'),
-                              selectedColor: const Color(0xFFEFF6FF),
-                              checkmarkColor: const Color(0xFF2563EB),
+                          children: InventoryService.instance.masterCategories.map((mc) {
+                            final isSelected = _selectedMasterCategories.contains(mc.id);
+                            return FilterChip(
+                              avatar: Icon(mc.icon, size: 16, color: isSelected ? mc.color : AppColors.textSecondary),
+                              label: Text(mc.name),
+                              selected: isSelected,
+                              selectedColor: mc.color.withValues(alpha: 0.15),
+                              checkmarkColor: mc.color,
+                              labelStyle: GoogleFonts.inter(
+                                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                color: isSelected ? mc.color : AppColors.textPrimary,
+                              ),
                               onSelected: (val) {
                                 setState(() {
                                   if (val) {
-                                    _selectedMasterCategories.add('eletronica');
-                                    _selectedMasterCategories.remove('outros');
-                                  } else {
-                                    if (_selectedMasterCategories.length > 1) {
-                                      _selectedMasterCategories.remove('eletronica');
-                                    }
-                                  }
-                                });
-                              },
-                            ),
-                            FilterChip(
-                              label: const Text('Produção'),
-                              selected: _selectedMasterCategories.contains('producao'),
-                              selectedColor: const Color(0xFFFEF3C7),
-                              checkmarkColor: const Color(0xFFD97706),
-                              onSelected: (val) {
-                                setState(() {
-                                  if (val) {
-                                    _selectedMasterCategories.add('producao');
-                                    _selectedMasterCategories.remove('outros');
-                                  } else {
-                                    if (_selectedMasterCategories.length > 1) {
-                                      _selectedMasterCategories.remove('producao');
-                                    }
-                                  }
-                                });
-                              },
-                            ),
-                            FilterChip(
-                              label: const Text('Outros'),
-                              selected: _selectedMasterCategories.contains('outros'),
-                              selectedColor: const Color(0xFFF3F4F6),
-                              checkmarkColor: const Color(0xFF4B5563),
-                              onSelected: (val) {
-                                setState(() {
-                                  if (val) {
-                                    _selectedMasterCategories.clear();
-                                    _selectedMasterCategories.add('outros');
-                                  } else {
-                                    if (_selectedMasterCategories.length > 1) {
+                                    if (mc.id == 'outros') {
+                                      _selectedMasterCategories.clear();
+                                      _selectedMasterCategories.add('outros');
+                                    } else {
+                                      _selectedMasterCategories.add(mc.id);
                                       _selectedMasterCategories.remove('outros');
                                     }
+                                  } else {
+                                    if (_selectedMasterCategories.length > 1) {
+                                      _selectedMasterCategories.remove(mc.id);
+                                    }
                                   }
                                 });
                               },
-                            ),
-                          ],
+                            );
+                          }).toList(),
                         ),
                       ),
                       const SizedBox(height: 18),

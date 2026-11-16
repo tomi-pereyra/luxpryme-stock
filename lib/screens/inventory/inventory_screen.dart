@@ -6,6 +6,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/widgets/lux_logo.dart';
 import '../../data/models/category_model.dart';
+import '../../data/models/master_category_model.dart';
 import '../../data/models/product_model.dart';
 import '../../data/services/cart_service.dart';
 import '../../data/services/inventory_service.dart';
@@ -13,6 +14,7 @@ import '../admin/admin_panel_screen.dart';
 import '../history/history_screen.dart';
 import 'widgets/cart_modal.dart';
 import 'widgets/categories_manage_dialog.dart';
+import 'widgets/master_categories_manage_dialog.dart';
 import 'widgets/category_filter_bar.dart';
 import 'widgets/product_card.dart';
 import 'widgets/product_form_dialog.dart';
@@ -172,6 +174,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   Future<void> _openMoveMasterCategoryDialog(ProductModel product) async {
     final selected = Set<String>.from(product.masterCategories);
+    final allMasterCats = InventoryService.instance.masterCategories;
+
     final result = await showDialog<Set<String>>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -179,79 +183,59 @@ class _InventoryScreenState extends State<InventoryScreen> {
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             title: Text(
-              'Gerenciar Categoria Mestre',
+              'Gerenciar Categorias Mestres',
               style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 18),
             ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product.name,
-                  style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
-                ),
-                if (product.internalCode != null && product.internalCode!.isNotEmpty) ...[
-                  const SizedBox(height: 4),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    'Cód. Int: ${product.internalCode}',
-                    style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
+                    product.name,
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
                   ),
+                  if (product.internalCode != null && product.internalCode!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Cód. Int: ${product.internalCode}',
+                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  Text(
+                    'Selecione as categorias mestres para este produto:',
+                    style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
+                  ),
+                  const SizedBox(height: 12),
+                  ...allMasterCats.map((mc) {
+                    final isChecked = selected.contains(mc.id);
+                    return CheckboxListTile(
+                      dense: true,
+                      secondary: Icon(mc.icon, color: mc.color, size: 20),
+                      title: Text(mc.name, style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                      subtitle: mc.description != null ? Text(mc.description!) : null,
+                      value: isChecked,
+                      onChanged: (val) {
+                        setDialogState(() {
+                          if (val == true) {
+                            if (mc.id == 'outros') {
+                              selected.clear();
+                              selected.add('outros');
+                            } else {
+                              selected.add(mc.id);
+                              selected.remove('outros');
+                            }
+                          } else {
+                            selected.remove(mc.id);
+                            if (selected.isEmpty) selected.add('outros');
+                          }
+                        });
+                      },
+                    );
+                  }),
                 ],
-                const SizedBox(height: 16),
-                Text(
-                  'Selecione as categorias mestres para este produto:',
-                  style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
-                ),
-                const SizedBox(height: 12),
-                CheckboxListTile(
-                  title: const Text('Eletrônica'),
-                  subtitle: const Text('Componentes, semicondutores e PCBs'),
-                  value: selected.contains('eletronica'),
-                  onChanged: (val) {
-                    setDialogState(() {
-                      if (val == true) {
-                        selected.add('eletronica');
-                        selected.remove('outros');
-                      } else {
-                        selected.remove('eletronica');
-                        if (selected.isEmpty) selected.add('outros');
-                      }
-                    });
-                  },
-                ),
-                CheckboxListTile(
-                  title: const Text('Produção'),
-                  subtitle: const Text('Montagem de luminárias, gabinetes, baterias'),
-                  value: selected.contains('producao'),
-                  onChanged: (val) {
-                    setDialogState(() {
-                      if (val == true) {
-                        selected.add('producao');
-                        selected.remove('outros');
-                      } else {
-                        selected.remove('producao');
-                        if (selected.isEmpty) selected.add('outros');
-                      }
-                    });
-                  },
-                ),
-                CheckboxListTile(
-                  title: const Text('Outros'),
-                  subtitle: const Text('Insumos gerais, manutenção predial, civil'),
-                  value: selected.contains('outros'),
-                  onChanged: (val) {
-                    setDialogState(() {
-                      if (val == true) {
-                        selected.clear();
-                        selected.add('outros');
-                      } else {
-                        selected.remove('outros');
-                        if (selected.isEmpty) selected.add('eletronica');
-                      }
-                    });
-                  },
-                ),
-              ],
+              ),
             ),
             actions: [
               TextButton(
@@ -295,22 +279,22 @@ class _InventoryScreenState extends State<InventoryScreen> {
     }
   }
 
-  Widget _buildMasterCategoryChip(String id, String label, IconData icon, int count) {
+  Widget _buildMasterCategoryChip(
+    String id,
+    String label,
+    IconData icon,
+    int count, {
+    Color? activeColor,
+  }) {
     final isSelected = _selectedMasterCategory == id;
-    Color activeColor;
-    switch (id) {
-      case 'eletronica':
-        activeColor = const Color(0xFF2563EB);
-        break;
-      case 'producao':
-        activeColor = const Color(0xFFD97706);
-        break;
-      case 'outros':
-        activeColor = const Color(0xFF4B5563);
-        break;
-      default:
-        activeColor = AppColors.primary;
-    }
+    final Color chipColor = activeColor ??
+        (id == 'eletronica'
+            ? const Color(0xFF2563EB)
+            : id == 'producao'
+                ? const Color(0xFF059669)
+                : id == 'outros'
+                    ? const Color(0xFF64748B)
+                    : AppColors.primary);
 
     return InkWell(
       onTap: () {
@@ -323,10 +307,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? activeColor : Colors.grey.shade100,
+          color: isSelected ? chipColor : Colors.grey.shade100,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: isSelected ? activeColor : AppColors.border,
+            color: isSelected ? chipColor : AppColors.border,
             width: isSelected ? 1.5 : 1,
           ),
         ),
@@ -617,44 +601,74 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
               return Column(
                 children: [
-              // Barra de Seleção de Categoria Mestre
-              Container(
-                color: Colors.white,
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      _buildMasterCategoryChip(
-                        'todas',
-                        'Todas',
-                        Icons.dashboard_outlined,
-                        rawProducts.length,
+              // Barra de Seleção de Categoria Mestre Dinâmica
+              StreamBuilder<List<MasterCategoryModel>>(
+                stream: InventoryService.instance.streamMasterCategories(),
+                builder: (context, masterSnapshot) {
+                  final masterCats = masterSnapshot.data ?? InventoryService.instance.masterCategories;
+
+                  return Container(
+                    color: Colors.white,
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          _buildMasterCategoryChip(
+                            'todas',
+                            'Todas',
+                            Icons.dashboard_outlined,
+                            rawProducts.length,
+                          ),
+                          const SizedBox(width: 8),
+                          ...masterCats.map((mc) {
+                            final count = rawProducts
+                                .where((p) => p.masterCategories.contains(mc.id))
+                                .length;
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: _buildMasterCategoryChip(
+                                mc.id,
+                                mc.name,
+                                mc.icon,
+                                count,
+                                activeColor: mc.color,
+                              ),
+                            );
+                          }),
+                          // Botão Gerenciar Categorias Mestres (PIN Mestre)
+                          InkWell(
+                            onTap: () => MasterCategoriesManageDialog.show(context),
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: AppColors.background,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: AppColors.border),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.tune, size: 16, color: AppColors.textSecondary),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Gerenciar',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      _buildMasterCategoryChip(
-                        'eletronica',
-                        'Eletrônica',
-                        Icons.memory,
-                        rawProducts.where((p) => p.isEletronica).length,
-                      ),
-                      const SizedBox(width: 8),
-                      _buildMasterCategoryChip(
-                        'producao',
-                        'Produção',
-                        Icons.precision_manufacturing_outlined,
-                        rawProducts.where((p) => p.isProducao).length,
-                      ),
-                      const SizedBox(width: 8),
-                      _buildMasterCategoryChip(
-                        'outros',
-                        'Outros',
-                        Icons.inventory_2_outlined,
-                        rawProducts.where((p) => p.isOutros).length,
-                      ),
-                    ],
-                  ),
-                ),
+                    ),
+                  );
+                },
               ),
 
               // 1. Barra de Busca e Ordenação

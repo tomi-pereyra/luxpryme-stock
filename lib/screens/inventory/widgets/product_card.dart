@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../data/models/master_category_model.dart';
 import '../../../data/models/product_model.dart';
 import '../../../data/services/inventory_service.dart';
 import 'add_to_cart_dialog.dart';
@@ -106,24 +107,19 @@ class ProductCard extends StatelessWidget {
                     spacing: 6,
                     runSpacing: 4,
                     children: [
-                      // Badges de Categoria Mestre (Eletrônica / Produção / Outros)
+                      // Badges de Categoria Mestre Dinâmicas
                       ...product.masterCategories.map((mc) {
-                        Color c;
-                        Color bg;
-                        String lbl;
-                        if (mc == 'eletronica') {
-                          c = const Color(0xFF2563EB);
-                          bg = const Color(0xFFEFF6FF);
-                          lbl = 'Eletrônica';
-                        } else if (mc == 'producao') {
-                          c = const Color(0xFFD97706);
-                          bg = const Color(0xFFFEF3C7);
-                          lbl = 'Produção';
-                        } else {
-                          c = const Color(0xFF4B5563);
-                          bg = const Color(0xFFF3F4F6);
-                          lbl = 'Outros';
-                        }
+                        final found = InventoryService.instance.masterCategories.firstWhere(
+                          (m) => m.id.toLowerCase() == mc.toLowerCase(),
+                          orElse: () => MasterCategoryModel(
+                            id: mc,
+                            name: mc.split('_').map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1)}').join(' '),
+                          ),
+                        );
+                        final c = found.color;
+                        final bg = found.color.withValues(alpha: 0.12);
+                        final lbl = found.name;
+
                         return Container(
                           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                           decoration: BoxDecoration(

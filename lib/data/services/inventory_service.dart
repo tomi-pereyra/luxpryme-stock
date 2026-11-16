@@ -7,6 +7,7 @@ import '../../core/constants/app_constants.dart';
 import '../datasources/default_categories.dart';
 import '../models/cart_item_model.dart';
 import '../models/category_model.dart';
+import '../models/master_category_model.dart';
 import '../models/operator_pin_model.dart';
 import '../models/product_model.dart';
 import '../models/stock_movement_model.dart';
@@ -39,12 +40,40 @@ class InventoryService {
       _client?.auth.onAuthStateChange ?? const Stream.empty();
 
   // ---------------------------------------------------------------------------
-  // ESTADO LOCAL EM MEMÓRIA
+  // ESTADO LOCAL EM MEMÓRIA E CATEGORIAS MESTRES PADRÃO
   // ---------------------------------------------------------------------------
+  static const List<MasterCategoryModel> defaultMasterCategories = [
+    MasterCategoryModel(
+      id: 'eletronica',
+      name: 'Eletrônica',
+      description: 'Componentes eletrônicos, semicondutores, PCBs e insumos de eletrônica',
+      colorHex: '#2563EB',
+      iconName: 'memory',
+      isSystemDefault: true,
+    ),
+    MasterCategoryModel(
+      id: 'producao',
+      name: 'Produção',
+      description: 'Componentes e insumos para montagem do produto final',
+      colorHex: '#059669',
+      iconName: 'precision_manufacturing',
+      isSystemDefault: true,
+    ),
+    MasterCategoryModel(
+      id: 'outros',
+      name: 'Outros',
+      description: 'Insumos gerais, manutenção predial e civil',
+      colorHex: '#64748B',
+      iconName: 'inventory_2',
+      isSystemDefault: true,
+    ),
+  ];
+
   late List<CategoryModel> _localCategories;
   late List<ProductModel> _localProducts;
   late List<OperatorPinModel> _localPins;
   late List<StockMovementModel> _localMovements;
+  late List<MasterCategoryModel> _masterCategories;
 
   final _categoriesStreamController =
       StreamController<List<CategoryModel>>.broadcast();
@@ -54,6 +83,11 @@ class InventoryService {
       StreamController<List<OperatorPinModel>>.broadcast();
   final _movementsStreamController =
       StreamController<List<StockMovementModel>>.broadcast();
+  final _masterCategoriesStreamController =
+      StreamController<List<MasterCategoryModel>>.broadcast();
+
+  List<MasterCategoryModel> get masterCategories =>
+      List.unmodifiable(_masterCategories);
 
   void _initLocalData() {
     _localCategories = List.from(luxprymeDefaultCategories);
@@ -122,6 +156,26 @@ class InventoryService {
       ),
     ];
     _localMovements = [];
+
+    _masterCategories = List.from(defaultMasterCategories);
+    try {
+      final file = File('local_master_categories.json');
+      if (file.existsSync()) {
+        final jsonStr = file.readAsStringSync();
+        final List list = jsonDecode(jsonStr);
+        final custom = list
+            .map((e) => MasterCategoryModel.fromMap(Map<String, dynamic>.from(e)))
+            .toList();
+        for (final c in custom) {
+          if (!_masterCategories.any((m) => m.id.toLowerCase() == c.id.toLowerCase())) {
+            _masterCategories.add(c);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Aviso ao carregar categorias mestres locais: $e');
+    }
+
     _notifyLocal();
   }
 
@@ -137,6 +191,9 @@ class InventoryService {
     }
     if (!_movementsStreamController.isClosed) {
       _movementsStreamController.add(List.unmodifiable(_localMovements));
+    }
+    if (!_masterCategoriesStreamController.isClosed) {
+      _masterCategoriesStreamController.add(List.unmodifiable(_masterCategories));
     }
   }
 
@@ -267,6 +324,303 @@ class InventoryService {
         .from(AppConstants.tableCategories)
         .delete()
         .eq('id', categoryId);
+  }
+
+  // ---------------------------------------------------------------------------
+  // CATEGORIAS MESTRES INDUSTRIAIS (ELETRÔNICA, PRODUÇÃO, PREPARAÇÃO, ETC.)
+  // ---------------------------------------------------------------------------
+
+  RealtimeChannel? _masterCategoriesRealtimeChannel;
+
+  Stream<List<MasterCategoryModel>> streamMasterCategories() {
+    if (_isLocalMode || _client == null) {
+      scheduleMicrotask(() {
+        if (!_masterCategoriesStreamController.isClosed) {
+          _masterCategoriesStreamController.add(List.unmodifiable(_masterCategories));
+        }
+      });
+      return _masterCategoriesStreamController.stream;
+    }
+
+    scheduleMicrotask(() {
+      if (!_masterCategoriesStreamController.isClosed) {
+        _masterCategoriesStreamController.add(List.unmodifiable(_masterCategories));
+      }
+    });
+    fetchMasterCategories();
+    _subscribeMasterCategoriesRealtime();
+    return _masterCategoriesStreamController.stream;
+  }
+
+  Future<List<MasterCategoryModel>> fetchMasterCategories() async {
+    if (_isLocalMode || _client == null) {
+      return List.unmodifiable(_masterCategories);
+    }
+
+    try {
+      final res = await _client!
+          .from(AppConstants.tableMasterCategories)
+          .select()
+          .order('name', ascending: true);
+
+      final items = (res as List)
+          .map((e) => MasterCategoryModel.fromMap(e as Map<String, dynamic>))
+          .toList();
+
+      if (items.isNotEmpty) {
+        final merged = List<MasterCategoryModel>.from(defaultMasterCategories);
+        for (final item in items) {
+          final idx = merged.indexWhere((m) => m.id.toLowerCase() == item.id.toLowerCase());
+          if (idx != -1) {
+            merged[idx] = item;
+          } else {
+            merged.add(item);
+          }
+        }
+        _masterCategories = merged;
+      }
+      if (!_masterCategoriesStreamController.isClosed) {
+        _masterCategoriesStreamController.add(List.unmodifiable(_masterCategories));
+      }
+      _saveMasterCategoriesLocal();
+      return _masterCategories;
+    } catch (e) {
+      debugPrint('Aviso ao carregar master_categories do Supabase: $e');
+      return _masterCategories;
+    }
+  }
+
+  void _subscribeMasterCategoriesRealtime() {
+    if (_masterCategoriesRealtimeChannel != null || _client == null) return;
+
+    _masterCategoriesRealtimeChannel = _client!
+        .channel('public:master_categories_live')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: AppConstants.tableMasterCategories,
+          callback: (payload) {
+            fetchMasterCategories();
+          },
+        )
+        .subscribe();
+  }
+
+  String generateMasterCategorySlug(String text) {
+    var s = text.toLowerCase().trim();
+    s = s.replaceAll(RegExp(r'[áàãâä]'), 'a');
+    s = s.replaceAll(RegExp(r'[éèêë]'), 'e');
+    s = s.replaceAll(RegExp(r'[íìîï]'), 'i');
+    s = s.replaceAll(RegExp(r'[óòõôö]'), 'o');
+    s = s.replaceAll(RegExp(r'[úùûü]'), 'u');
+    s = s.replaceAll(RegExp(r'[ç]'), 'c');
+    s = s.replaceAll(RegExp(r'[^a-z0-9]+'), '_');
+    s = s.replaceAll(RegExp(r'^_+|_+$'), '');
+    return s.isEmpty ? 'cat_${DateTime.now().millisecondsSinceEpoch}' : s;
+  }
+
+  String getMasterCategoryName(String id) {
+    final found = _masterCategories.firstWhere(
+      (m) => m.id.toLowerCase() == id.toLowerCase(),
+      orElse: () => MasterCategoryModel(id: id, name: id),
+    );
+    return found.name;
+  }
+
+  Future<MasterCategoryModel> createMasterCategory({
+    required String name,
+    String? description,
+    String? colorHex,
+    String? iconName,
+    required String masterPin,
+  }) async {
+    final operator = await validatePin(masterPin);
+    if (operator == null) {
+      throw Exception('PIN incorreto ou não cadastrado no sistema.');
+    }
+    if (!operator.isMasterPin) {
+      throw Exception(
+        'Acesso negado: O PIN informado pertence a "${operator.name}". '
+        'Apenas operadores com PIN Mestre (ex: Supervisor Geral) têm autorização para adicionar categorias mestres.',
+      );
+    }
+
+    final cleanName = name.trim();
+    if (cleanName.isEmpty) {
+      throw Exception('Informe o nome da categoria mestre.');
+    }
+
+    final id = generateMasterCategorySlug(cleanName);
+    if (_masterCategories.any((mc) => mc.id.toLowerCase() == id)) {
+      throw Exception('Já existe uma categoria mestre com o identificador "$id".');
+    }
+
+    final newMaster = MasterCategoryModel(
+      id: id,
+      name: cleanName,
+      description: description?.trim().isEmpty == true ? null : description?.trim(),
+      colorHex: colorHex,
+      iconName: iconName,
+      createdAt: DateTime.now(),
+      isSystemDefault: false,
+    );
+
+    if (!_isLocalMode && _client != null) {
+      try {
+        await _client!.from(AppConstants.tableMasterCategories).insert({
+          'id': id,
+          'name': cleanName,
+          if (newMaster.description != null) 'description': newMaster.description,
+          if (newMaster.colorHex != null) 'color': newMaster.colorHex,
+          if (newMaster.iconName != null) 'icon': newMaster.iconName,
+        });
+      } catch (e) {
+        debugPrint('Aviso ao inserir master_category no Supabase: $e');
+      }
+    }
+
+    _masterCategories.add(newMaster);
+    _saveMasterCategoriesLocal();
+    if (!_masterCategoriesStreamController.isClosed) {
+      _masterCategoriesStreamController.add(List.unmodifiable(_masterCategories));
+    }
+    return newMaster;
+  }
+
+  Future<MasterCategoryModel> updateMasterCategory({
+    required String id,
+    required String name,
+    String? description,
+    String? colorHex,
+    String? iconName,
+    required String masterPin,
+  }) async {
+    final operator = await validatePin(masterPin);
+    if (operator == null) {
+      throw Exception('PIN incorreto ou não cadastrado no sistema.');
+    }
+    if (!operator.isMasterPin) {
+      throw Exception(
+        'Acesso negado: O PIN informado pertence a "${operator.name}". '
+        'Apenas operadores com PIN Mestre têm autorização para modificar categorias mestres.',
+      );
+    }
+
+    final index = _masterCategories.indexWhere((mc) => mc.id.toLowerCase() == id.toLowerCase());
+    if (index == -1) {
+      throw Exception('Categoria mestre "$id" não encontrada.');
+    }
+
+    final cleanName = name.trim();
+    if (cleanName.isEmpty) {
+      throw Exception('O nome da categoria mestre não pode ser vazio.');
+    }
+
+    final existing = _masterCategories[index];
+    final updated = existing.copyWith(
+      name: cleanName,
+      description: description?.trim().isEmpty == true ? null : description?.trim(),
+      colorHex: colorHex ?? existing.colorHex,
+      iconName: iconName ?? existing.iconName,
+    );
+
+    if (!_isLocalMode && _client != null) {
+      try {
+        await _client!.from(AppConstants.tableMasterCategories).update({
+          'name': updated.name,
+          'description': updated.description,
+          'color': updated.colorHex,
+          'icon': updated.iconName,
+        }).eq('id', id);
+      } catch (e) {
+        debugPrint('Aviso ao atualizar master_category no Supabase: $e');
+      }
+    }
+
+    _masterCategories[index] = updated;
+    _saveMasterCategoriesLocal();
+    if (!_masterCategoriesStreamController.isClosed) {
+      _masterCategoriesStreamController.add(List.unmodifiable(_masterCategories));
+    }
+    return updated;
+  }
+
+  Future<void> deleteMasterCategory({
+    required String id,
+    required String masterPin,
+  }) async {
+    final operator = await validatePin(masterPin);
+    if (operator == null) {
+      throw Exception('PIN incorreto ou não cadastrado no sistema.');
+    }
+    if (!operator.isMasterPin) {
+      throw Exception(
+        'Acesso negado: O PIN informado pertence a "${operator.name}". '
+        'Apenas operadores com PIN Mestre têm autorização para excluir categorias mestres.',
+      );
+    }
+
+    final lowerId = id.toLowerCase();
+    if (lowerId == 'outros') {
+      throw Exception('A categoria mestre "Outros" é padrão do sistema e não pode ser excluída.');
+    }
+
+    // Desvincula dos produtos que tinham essa categoria mestre, movendo para 'outros' se ficarem sem nenhuma
+    for (int i = 0; i < _allProducts.length; i++) {
+      final p = _allProducts[i];
+      if (p.masterCategories.contains(lowerId)) {
+        final newCats = List<String>.from(p.masterCategories)..remove(lowerId);
+        if (newCats.isEmpty) newCats.add('outros');
+        _allProducts[i] = p.copyWith(masterCategories: newCats);
+        if (!_isLocalMode && _client != null) {
+          _client!
+              .from(AppConstants.tableProducts)
+              .update({'master_categories': newCats})
+              .eq('id', p.id)
+              .then((_) {}, onError: (e) => debugPrint('Erro ao desvincular categoria de produto: $e'));
+        }
+      }
+    }
+    if (!_productsStreamController.isClosed) {
+      _productsStreamController.add(List.unmodifiable(_allProducts));
+    }
+
+    // Se houver algum PIN vinculado exclusivamente a essa categoria, migra para 'outros'
+    for (int i = 0; i < _localPins.length; i++) {
+      if (_localPins[i].masterCategory.toLowerCase() == lowerId) {
+        _localPins[i] = _localPins[i].copyWith(masterCategory: 'outros');
+      }
+    }
+    if (!_isLocalMode && _client != null) {
+      try {
+        await _client!
+            .from('operator_pins')
+            .update({'master_category': 'outros'})
+            .eq('master_category', lowerId);
+      } catch (_) {}
+    }
+
+    if (!_isLocalMode && _client != null) {
+      try {
+        await _client!.from(AppConstants.tableMasterCategories).delete().eq('id', id);
+      } catch (e) {
+        debugPrint('Aviso ao remover master_category do Supabase: $e');
+      }
+    }
+
+    _masterCategories.removeWhere((mc) => mc.id.toLowerCase() == lowerId);
+    _saveMasterCategoriesLocal();
+    if (!_masterCategoriesStreamController.isClosed) {
+      _masterCategoriesStreamController.add(List.unmodifiable(_masterCategories));
+    }
+  }
+
+  void _saveMasterCategoriesLocal() {
+    try {
+      final file = File('local_master_categories.json');
+      final list = _masterCategories.map((mc) => mc.toMap()).toList();
+      file.writeAsStringSync(jsonEncode(list));
+    } catch (_) {}
   }
 
   // ---------------------------------------------------------------------------

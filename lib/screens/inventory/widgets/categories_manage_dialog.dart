@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/category_model.dart';
 import '../../../data/services/inventory_service.dart';
+import 'master_categories_manage_dialog.dart';
 
 class CategoriesManageDialog extends StatefulWidget {
   const CategoriesManageDialog({super.key});
@@ -148,9 +149,25 @@ class _CategoriesManageDialogState extends State<CategoriesManageDialog> {
                       ),
                     ],
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: AppColors.textSecondary),
-                    onPressed: () => Navigator.of(context).pop(),
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.dashboard_customize_outlined, size: 16),
+                        label: Text(
+                          'Categorias Mestres',
+                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          MasterCategoriesManageDialog.show(context);
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: AppColors.textSecondary),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ],
                   ),
                 ],
               ),

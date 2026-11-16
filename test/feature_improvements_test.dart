@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:luxpryme_stock/data/models/product_model.dart';
 import 'package:luxpryme_stock/data/models/category_model.dart';
+import 'package:luxpryme_stock/data/models/master_category_model.dart';
 import 'package:luxpryme_stock/data/models/operator_pin_model.dart';
 import 'package:luxpryme_stock/data/models/stock_movement_model.dart';
 import 'package:luxpryme_stock/data/services/inventory_service.dart';
@@ -246,6 +247,87 @@ void main() {
       expect(restored.isEletronica, isTrue);
       expect(restored.isProducao, isTrue);
       expect(restored.isOutros, isFalse);
+    });
+  });
+
+  group('Dynamic Master Categories Management with Master PIN Tests', () {
+    final service = InventoryService.instance;
+
+    test('Serialização e Deserialização do MasterCategoryModel', () {
+      final model = MasterCategoryModel(
+        id: 'preparacao',
+        name: 'Preparação',
+        description: 'Setor de corte e preparação de fios e cabos',
+        colorHex: '#EA580C',
+        iconName: 'build',
+      );
+
+      final map = model.toMap();
+      expect(map['id'], equals('preparacao'));
+      expect(map['name'], equals('Preparação'));
+      expect(map['color'], equals('#EA580C'));
+      expect(map['icon'], equals('build'));
+
+      final restored = MasterCategoryModel.fromMap(map);
+      expect(restored.id, equals('preparacao'));
+      expect(restored.name, equals('Preparação'));
+      expect(restored.colorHex, equals('#EA580C'));
+    });
+
+    test('Criar Categoria Mestre com PIN Mestre (autorizado)', () async {
+      final newCat = await service.createMasterCategory(
+        name: 'Embalamento e Expedição',
+        description: 'Caixas coletivas e embalagens finais',
+        colorHex: '#7C3AED',
+        iconName: 'all_inbox',
+        masterPin: '2026', // PIN Mestre do Tomas
+      );
+
+      expect(newCat.id, equals('embalamento_e_expedicao'));
+      expect(newCat.name, equals('Embalamento e Expedição'));
+      expect(service.masterCategories.any((mc) => mc.id == 'embalamento_e_expedicao'), isTrue);
+    });
+
+    test('Rejeitar criação de Categoria Mestre com PIN não-mestre (ex: Eletrônica 1111)', () async {
+      expect(
+        () => service.createMasterCategory(
+          name: 'Pintura',
+          masterPin: '1111', // PIN de Eletrônica, não é mestre
+        ),
+        throwsA(isA<Exception>().having(
+          (e) => e.toString(),
+          'message',
+          contains('Apenas operadores com PIN Mestre'),
+        )),
+      );
+    });
+
+    test('Modificar Categoria Mestre com PIN Mestre', () async {
+      final updated = await service.updateMasterCategory(
+        id: 'embalamento_e_expedicao',
+        name: 'Embalamento Industrial',
+        description: 'Nova descrição atualizada',
+        masterPin: '2026',
+      );
+
+      expect(updated.name, equals('Embalamento Industrial'));
+      expect(service.getMasterCategoryName('embalamento_e_expedicao'), equals('Embalamento Industrial'));
+    });
+
+    test('Eliminar Categoria Mestre com PIN Mestre e proteger categoria Outros', () async {
+      // Tentar eliminar Outros deve falhar
+      expect(
+        () => service.deleteMasterCategory(id: 'outros', masterPin: '2026'),
+        throwsA(isA<Exception>().having(
+          (e) => e.toString(),
+          'message',
+          contains('é padrão do sistema e não pode ser excluída'),
+        )),
+      );
+
+      // Eliminar categoria criada anteriormente com PIN Mestre
+      await service.deleteMasterCategory(id: 'embalamento_e_expedicao', masterPin: '2026');
+      expect(service.masterCategories.any((mc) => mc.id == 'embalamento_e_expedicao'), isFalse);
     });
   });
 }

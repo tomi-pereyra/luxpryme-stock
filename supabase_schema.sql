@@ -146,6 +146,30 @@ DROP POLICY IF EXISTS "Permitir leitura e escrita pública de movimentações" O
 DROP POLICY IF EXISTS "Permitir acesso geral a movimentações" ON public.stock_movements;
 CREATE POLICY "Permitir acesso geral a movimentações" ON public.stock_movements FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
 
+-- 8. Tabela de Categorias Mestres Dinâmicas
+CREATE TABLE IF NOT EXISTS public.master_categories (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    color TEXT,
+    icon TEXT,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+INSERT INTO public.master_categories (id, name, description, color, icon) VALUES
+    ('eletronica', 'Eletrônica', 'Componentes eletrônicos, semicondutores, PCBs e insumos de eletrônica', '#2563EB', 'memory'),
+    ('producao', 'Produção', 'Componentes e insumos utilizados na montagem do produto final', '#059669', 'precision_manufacturing'),
+    ('outros', 'Outros', 'Insumos gerais, manutenção predial e civil', '#64748B', 'inventory_2')
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    description = EXCLUDED.description,
+    color = EXCLUDED.color,
+    icon = EXCLUDED.icon;
+
+ALTER TABLE public.master_categories ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Permitir acesso geral a master_categories" ON public.master_categories;
+CREATE POLICY "Permitir acesso geral a master_categories" ON public.master_categories FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
+
 -- 7. Habilitar Realtime
 DO $$
 BEGIN
@@ -166,6 +190,11 @@ BEGIN
 
     BEGIN
         ALTER PUBLICATION supabase_realtime ADD TABLE public.stock_movements;
+    EXCEPTION WHEN duplicate_object THEN
+    END;
+
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.master_categories;
     EXCEPTION WHEN duplicate_object THEN
     END;
 END $$;

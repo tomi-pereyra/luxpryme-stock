@@ -23,11 +23,21 @@ class OperatorPinModel {
     switch (masterCategory.toLowerCase()) {
       case 'todas':
         return 'Mestre (Todas as Categorias)';
+      case 'eletronica':
+        return 'Eletrônica';
       case 'producao':
         return 'Produção';
-      case 'eletronica':
+      case 'outros':
+        return 'Outros';
+      case 'preparacao':
+        return 'Preparação';
+      case 'embalamento':
+        return 'Embalamento';
       default:
-        return 'Eletrônica';
+        return masterCategory
+            .split('_')
+            .map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1)}')
+            .join(' ');
     }
   }
 

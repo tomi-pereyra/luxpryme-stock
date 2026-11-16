@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/constants/app_colors.dart';
+import '../../data/models/master_category_model.dart';
 import '../../data/models/operator_pin_model.dart';
 import '../../data/services/inventory_service.dart';
+import '../inventory/widgets/master_categories_manage_dialog.dart';
 
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
@@ -293,6 +295,66 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                 ),
                 const SizedBox(height: 20),
 
+                // Card de Gestão de Categorias Mestres Industriais
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryContainer,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.dashboard_customize_outlined,
+                            color: AppColors.primary, size: 26),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Categorias Mestres Industriais',
+                              style: GoogleFonts.inter(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Adicione, edite ou remova categorias mestres (ex: Preparação, Embalamento) com validação de PIN Mestre.',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        ),
+                        icon: const Icon(Icons.tune, size: 18),
+                        label: Text(
+                          'Gerenciar Categorias Mestres',
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                        ),
+                        onPressed: () => MasterCategoriesManageDialog.show(context),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+
                 // Formulário de Cadastro de Novo PIN
                 Container(
                   padding: const EdgeInsets.all(20),
@@ -354,31 +416,39 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: Wrap(
-                              spacing: 8,
-                              children: [
-                                ChoiceChip(
-                                  label: const Text('Eletrônica'),
-                                  selected: _selectedMasterCategory == 'eletronica',
-                                  onSelected: (val) {
-                                    if (val) setState(() => _selectedMasterCategory = 'eletronica');
-                                  },
-                                ),
-                                ChoiceChip(
-                                  label: const Text('Produção'),
-                                  selected: _selectedMasterCategory == 'producao',
-                                  onSelected: (val) {
-                                    if (val) setState(() => _selectedMasterCategory = 'producao');
-                                  },
-                                ),
-                                ChoiceChip(
-                                  label: const Text('Mestre (Todas)'),
-                                  selected: _selectedMasterCategory == 'todas',
-                                  onSelected: (val) {
-                                    if (val) setState(() => _selectedMasterCategory = 'todas');
-                                  },
-                                ),
-                              ],
+                            child: StreamBuilder<List<MasterCategoryModel>>(
+                              stream: InventoryService.instance.streamMasterCategories(),
+                              builder: (context, snapshot) {
+                                final masterCats = snapshot.data ?? InventoryService.instance.masterCategories;
+
+                                return Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    ChoiceChip(
+                                      avatar: const Icon(Icons.stars, size: 16, color: Color(0xFF7C3AED)),
+                                      label: const Text('Mestre (Todas as Categorias)'),
+                                      selected: _selectedMasterCategory == 'todas',
+                                      selectedColor: const Color(0xFFEDE9FE),
+                                      onSelected: (val) {
+                                        if (val) setState(() => _selectedMasterCategory = 'todas');
+                                      },
+                                    ),
+                                    ...masterCats.map((mc) {
+                                      final isSelected = _selectedMasterCategory == mc.id;
+                                      return ChoiceChip(
+                                        avatar: Icon(mc.icon, size: 16, color: isSelected ? mc.color : AppColors.textSecondary),
+                                        label: Text(mc.name),
+                                        selected: isSelected,
+                                        selectedColor: mc.color.withValues(alpha: 0.15),
+                                        onSelected: (val) {
+                                          if (val) setState(() => _selectedMasterCategory = mc.id);
+                                        },
+                                      );
+                                    }),
+                                  ],
+                                );
+                              },
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -456,12 +526,16 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                               if (p.isMasterPin) {
                                 badgeColor = const Color(0xFF7C3AED);
                                 badgeBg = const Color(0xFFEDE9FE);
-                              } else if (p.masterCategory == 'producao') {
-                                badgeColor = const Color(0xFFD97706);
-                                badgeBg = const Color(0xFFFEF3C7);
                               } else {
-                                badgeColor = AppColors.primary;
-                                badgeBg = AppColors.primaryContainer;
+                                final mc = InventoryService.instance.masterCategories.firstWhere(
+                                  (m) => m.id.toLowerCase() == p.masterCategory.toLowerCase(),
+                                  orElse: () => MasterCategoryModel(
+                                    id: p.masterCategory,
+                                    name: p.masterCategoryLabel,
+                                  ),
+                                );
+                                badgeColor = mc.color;
+                                badgeBg = mc.color.withValues(alpha: 0.12);
                               }
 
                               return ListTile(
