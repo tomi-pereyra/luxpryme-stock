@@ -15,6 +15,7 @@ class AdminPanelScreen extends StatefulWidget {
 class _AdminPanelScreenState extends State<AdminPanelScreen> {
   final _nameController = TextEditingController();
   final _pinController = TextEditingController();
+  String _selectedMasterCategory = 'eletronica';
 
   bool _isCreating = false;
   String? _errorMessage;
@@ -50,7 +51,11 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     });
 
     try {
-      await InventoryService.instance.createOperatorPin(name: name, pin: pin);
+      await InventoryService.instance.createOperatorPin(
+        name: name,
+        pin: pin,
+        masterCategory: _selectedMasterCategory,
+      );
       _nameController.clear();
       _pinController.clear();
       if (mounted) {
@@ -334,6 +339,48 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                               ),
                             ),
                           ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Text(
+                            'Autorização por Categoria Mestre:',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Wrap(
+                              spacing: 8,
+                              children: [
+                                ChoiceChip(
+                                  label: const Text('Eletrônica'),
+                                  selected: _selectedMasterCategory == 'eletronica',
+                                  onSelected: (val) {
+                                    if (val) setState(() => _selectedMasterCategory = 'eletronica');
+                                  },
+                                ),
+                                ChoiceChip(
+                                  label: const Text('Produção'),
+                                  selected: _selectedMasterCategory == 'producao',
+                                  onSelected: (val) {
+                                    if (val) setState(() => _selectedMasterCategory = 'producao');
+                                  },
+                                ),
+                                ChoiceChip(
+                                  label: const Text('Mestre (Todas)'),
+                                  selected: _selectedMasterCategory == 'todas',
+                                  onSelected: (val) {
+                                    if (val) setState(() => _selectedMasterCategory = 'todas');
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
                           const SizedBox(width: 12),
                           ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
@@ -404,19 +451,52 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                                 const Divider(height: 1, color: AppColors.border),
                             itemBuilder: (context, index) {
                               final p = pins[index];
+                              Color badgeColor;
+                              Color badgeBg;
+                              if (p.isMasterPin) {
+                                badgeColor = const Color(0xFF7C3AED);
+                                badgeBg = const Color(0xFFEDE9FE);
+                              } else if (p.masterCategory == 'producao') {
+                                badgeColor = const Color(0xFFD97706);
+                                badgeBg = const Color(0xFFFEF3C7);
+                              } else {
+                                badgeColor = AppColors.primary;
+                                badgeBg = AppColors.primaryContainer;
+                              }
+
                               return ListTile(
                                 leading: CircleAvatar(
-                                  backgroundColor: AppColors.primaryContainer,
-                                  child: const Icon(Icons.vpn_key,
-                                      size: 18, color: AppColors.primary),
+                                  backgroundColor: badgeBg,
+                                  child: Icon(Icons.vpn_key, size: 18, color: badgeColor),
                                 ),
-                                title: Text(
-                                  p.name,
-                                  style: GoogleFonts.inter(
-                                      fontSize: 14, fontWeight: FontWeight.w700),
+                                title: Row(
+                                  children: [
+                                    Text(
+                                      p.name,
+                                      style: GoogleFonts.inter(
+                                          fontSize: 14, fontWeight: FontWeight.w700),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: badgeBg,
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: badgeColor.withValues(alpha: 0.3)),
+                                      ),
+                                      child: Text(
+                                        p.masterCategoryLabel,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: badgeColor,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                                 subtitle: Text(
-                                  'PIN: ${p.pin} • Autorizado para Baixa em Carrinho',
+                                  'PIN: ${p.pin} • Autorizado para modificações em: ${p.masterCategoryLabel}',
                                   style: GoogleFonts.inter(
                                       fontSize: 12, color: AppColors.textSecondary),
                                 ),

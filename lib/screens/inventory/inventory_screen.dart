@@ -41,6 +41,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   final TextEditingController _searchController = TextEditingController();
 
   String _searchQuery = '';
+  String _selectedMasterCategory = 'todas';
   String? _selectedCategoryId;
   String? _selectedSubcategory;
   final Set<String> _customSubcategories = {};
@@ -169,6 +170,201 @@ class _InventoryScreenState extends State<InventoryScreen> {
     }
   }
 
+  Future<void> _openMoveMasterCategoryDialog(ProductModel product) async {
+    final selected = Set<String>.from(product.masterCategories);
+    final result = await showDialog<Set<String>>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Text(
+              'Gerenciar Categoria Mestre',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 18),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  product.name,
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+                if (product.internalCode != null && product.internalCode!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Cód. Int: ${product.internalCode}',
+                    style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                Text(
+                  'Selecione as categorias mestres para este produto:',
+                  style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 12),
+                CheckboxListTile(
+                  title: const Text('Eletrônica'),
+                  subtitle: const Text('Componentes, semicondutores e PCBs'),
+                  value: selected.contains('eletronica'),
+                  onChanged: (val) {
+                    setDialogState(() {
+                      if (val == true) {
+                        selected.add('eletronica');
+                        selected.remove('outros');
+                      } else {
+                        selected.remove('eletronica');
+                        if (selected.isEmpty) selected.add('outros');
+                      }
+                    });
+                  },
+                ),
+                CheckboxListTile(
+                  title: const Text('Produção'),
+                  subtitle: const Text('Montagem de luminárias, gabinetes, baterias'),
+                  value: selected.contains('producao'),
+                  onChanged: (val) {
+                    setDialogState(() {
+                      if (val == true) {
+                        selected.add('producao');
+                        selected.remove('outros');
+                      } else {
+                        selected.remove('producao');
+                        if (selected.isEmpty) selected.add('outros');
+                      }
+                    });
+                  },
+                ),
+                CheckboxListTile(
+                  title: const Text('Outros'),
+                  subtitle: const Text('Insumos gerais, manutenção predial, civil'),
+                  value: selected.contains('outros'),
+                  onChanged: (val) {
+                    setDialogState(() {
+                      if (val == true) {
+                        selected.clear();
+                        selected.add('outros');
+                      } else {
+                        selected.remove('outros');
+                        if (selected.isEmpty) selected.add('eletronica');
+                      }
+                    });
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, selected),
+                child: const Text('Salvar Alterações'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (result != null && result.isNotEmpty) {
+      try {
+        await InventoryService.instance.moveProductMasterCategories(
+          productId: product.id,
+          masterCategories: result.toList(),
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: AppColors.stockNormal,
+              content: Text('Categoria mestre de "${product.name}" atualizada com sucesso!'),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: AppColors.stockZero,
+              content: Text(e.toString().replaceAll('Exception: ', '')),
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Widget _buildMasterCategoryChip(String id, String label, IconData icon, int count) {
+    final isSelected = _selectedMasterCategory == id;
+    Color activeColor;
+    switch (id) {
+      case 'eletronica':
+        activeColor = const Color(0xFF2563EB);
+        break;
+      case 'producao':
+        activeColor = const Color(0xFFD97706);
+        break;
+      case 'outros':
+        activeColor = const Color(0xFF4B5563);
+        break;
+      default:
+        activeColor = AppColors.primary;
+    }
+
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _selectedMasterCategory = id;
+        });
+      },
+      borderRadius: BorderRadius.circular(10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? activeColor : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isSelected ? activeColor : AppColors.border,
+            width: isSelected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: isSelected ? Colors.white : AppColors.textSecondary),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected ? Colors.white : AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.white.withValues(alpha: 0.25) : Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$count',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: isSelected ? Colors.white : AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   List<String> _getAvailableSubcategories(
     List<CategoryModel> categories,
     List<ProductModel> rawProducts,
@@ -206,6 +402,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
           .toList();
       return p.copyWith(categoryNames: catNames);
     }).toList();
+
+    // 0. Filtro por Categoria Mestre (Eletrônica / Produção / Outros / Todas)
+    if (_selectedMasterCategory != 'todas') {
+      list = list
+          .where((p) => p.masterCategories.contains(_selectedMasterCategory))
+          .toList();
+    }
 
     // 1. Filtro por Categoria (Suporta múltiplas categorias por produto)
     if (_selectedCategoryId != null) {
@@ -392,6 +595,46 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
               return Column(
                 children: [
+              // Barra de Seleção de Categoria Mestre
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildMasterCategoryChip(
+                        'todas',
+                        'Todas',
+                        Icons.dashboard_outlined,
+                        rawProducts.length,
+                      ),
+                      const SizedBox(width: 8),
+                      _buildMasterCategoryChip(
+                        'eletronica',
+                        'Eletrônica',
+                        Icons.memory,
+                        rawProducts.where((p) => p.isEletronica).length,
+                      ),
+                      const SizedBox(width: 8),
+                      _buildMasterCategoryChip(
+                        'producao',
+                        'Produção',
+                        Icons.precision_manufacturing_outlined,
+                        rawProducts.where((p) => p.isProducao).length,
+                      ),
+                      const SizedBox(width: 8),
+                      _buildMasterCategoryChip(
+                        'outros',
+                        'Outros',
+                        Icons.inventory_2_outlined,
+                        rawProducts.where((p) => p.isOutros).length,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
               // 1. Barra de Busca e Ordenação
               Container(
                 color: Colors.white,
@@ -610,6 +853,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                       onDelete: () =>
                                           _handleDeleteProduct(product),
                                       onOpenCart: _openCartModal,
+                                      onMoveMasterCategory: () =>
+                                          _openMoveMasterCategoryDialog(product),
                                     );
                                   },
                                 );
@@ -630,6 +875,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                       onDelete: () =>
                                           _handleDeleteProduct(product),
                                       onOpenCart: _openCartModal,
+                                      onMoveMasterCategory: () =>
+                                          _openMoveMasterCategoryDialog(product),
                                     ),
                                   );
                                 },

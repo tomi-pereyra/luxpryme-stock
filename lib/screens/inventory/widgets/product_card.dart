@@ -11,6 +11,7 @@ class ProductCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onOpenCart;
+  final VoidCallback? onMoveMasterCategory;
 
   const ProductCard({
     super.key,
@@ -18,6 +19,7 @@ class ProductCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onOpenCart,
+    this.onMoveMasterCategory,
   });
 
   Color _getStatusColor() {
@@ -104,6 +106,41 @@ class ProductCard extends StatelessWidget {
                     spacing: 6,
                     runSpacing: 4,
                     children: [
+                      // Badges de Categoria Mestre (Eletrônica / Produção / Outros)
+                      ...product.masterCategories.map((mc) {
+                        Color c;
+                        Color bg;
+                        String lbl;
+                        if (mc == 'eletronica') {
+                          c = const Color(0xFF2563EB);
+                          bg = const Color(0xFFEFF6FF);
+                          lbl = 'Eletrônica';
+                        } else if (mc == 'producao') {
+                          c = const Color(0xFFD97706);
+                          bg = const Color(0xFFFEF3C7);
+                          lbl = 'Produção';
+                        } else {
+                          c = const Color(0xFF4B5563);
+                          bg = const Color(0xFFF3F4F6);
+                          lbl = 'Outros';
+                        }
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                          decoration: BoxDecoration(
+                            color: bg,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: c.withValues(alpha: 0.3)),
+                          ),
+                          child: Text(
+                            lbl,
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: c,
+                            ),
+                          ),
+                        );
+                      }),
                       if (categoryNames.isEmpty)
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -219,8 +256,20 @@ class ProductCard extends StatelessWidget {
                   onSelected: (val) {
                     if (val == 'edit') onEdit();
                     if (val == 'delete') onDelete();
+                    if (val == 'move_category') onMoveMasterCategory?.call();
                   },
                   itemBuilder: (context) => [
+                    if (InventoryService.instance.isAdminUser && onMoveMasterCategory != null)
+                      const PopupMenuItem(
+                        value: 'move_category',
+                        child: Row(
+                          children: [
+                            Icon(Icons.drive_file_move_outlined, size: 18, color: Color(0xFF2563EB)),
+                            SizedBox(width: 8),
+                            Text('Mover Categoria Mestre'),
+                          ],
+                        ),
+                      ),
                     const PopupMenuItem(
                       value: 'edit',
                       child: Row(

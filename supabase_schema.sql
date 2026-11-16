@@ -1,5 +1,5 @@
 -- ==============================================================================
--- LUXPRYME STOCK - SCRIPT ATUALIZADO E SEGURO DO BANCO DE DADOS (SUPABASE)
+-- LUXPRYME STOCK - SCRIPT ATUALIZADO DO BANCO DE DADOS (SUPABASE)
 -- Execute este script no menu "SQL Editor" do seu painel do Supabase
 -- ==============================================================================
 
@@ -22,18 +22,28 @@ INSERT INTO public.categories (name, description) VALUES
     ('Placas com Componentes SMD', 'Placas montadas em superfície'),
     ('Placas com Componentes PTH', 'Placas com montagem e solda passante'),
     ('Placas Eletrônicas Testadas', 'Placas completas e testadas'),
-    ('Insumos e Químicos', 'Materiais e insumos de fabricação')
+    ('Insumos de Solda e Químicos', 'Materiais e insumos de fabricação'),
+    ('Gabinetes e Injeção Plástica', 'Caixas plásticas, lentes, visores e suportes'),
+    ('Sinalização e Adesivos', 'Cartelas fotoluminescentes e rotas de fuga'),
+    ('Embalagens e Fixações', 'Caixas coletivas, individuais e parafusos')
 ON CONFLICT (name) DO NOTHING;
 
--- 2. Tabela de Produtos / Itens de Estoque
+-- 2. Limpar produtos antigos para carga do zero (Conforme solicitado)
+TRUNCATE TABLE public.products CASCADE;
+
+-- Tabela de Produtos / Itens de Estoque
 CREATE TABLE IF NOT EXISTS public.products (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
     code TEXT,
     internal_code TEXT,
     manufacturer_code TEXT,
+    barcode TEXT,
+    master_categories TEXT[] DEFAULT ARRAY['eletronica']::TEXT[],
     category_id UUID REFERENCES public.categories(id) ON DELETE SET NULL,
     category_ids UUID[] DEFAULT ARRAY[]::UUID[],
+    subcategories TEXT[] DEFAULT ARRAY[]::TEXT[],
+    subcategory TEXT,
     quantity INTEGER NOT NULL DEFAULT 0,
     min_quantity INTEGER NOT NULL DEFAULT 10,
     location TEXT,
@@ -46,6 +56,8 @@ CREATE TABLE IF NOT EXISTS public.products (
 -- Migração Segura: Adiciona novas colunas caso a tabela já existisse
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS internal_code TEXT;
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS manufacturer_code TEXT;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS barcode TEXT;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS master_categories TEXT[] DEFAULT ARRAY['eletronica']::TEXT[];
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS category_ids UUID[] DEFAULT ARRAY[]::UUID[];
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS subcategories TEXT[] DEFAULT ARRAY[]::TEXT[];
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS subcategory TEXT;
@@ -55,17 +67,25 @@ CREATE TABLE IF NOT EXISTS public.operator_pins (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
     pin VARCHAR(4) NOT NULL UNIQUE,
+    master_category TEXT NOT NULL DEFAULT 'eletronica',
     is_active BOOLEAN DEFAULT true NOT NULL,
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Inserir PINs Iniciais Padrão
-INSERT INTO public.operator_pins (name, pin, is_active) VALUES
-    ('Tomas (Supervisor de Eletrônica)', '2026', true),
-    ('Roberto (Monitor de Linha)', '1234', true),
-    ('Linha de Montagem SMD', '1111', true),
-    ('Bancada PTH / Soldagem', '2222', true)
-ON CONFLICT (pin) DO NOTHING;
+-- Migração Segura: Adiciona master_category caso a tabela já existisse
+ALTER TABLE public.operator_pins ADD COLUMN IF NOT EXISTS master_category TEXT NOT NULL DEFAULT 'eletronica';
+
+-- Inserir / Atualizar PINs Iniciais com suas Categorias Mestres
+INSERT INTO public.operator_pins (name, pin, master_category, is_active) VALUES
+    ('Tomas (Supervisor Geral - Acesso Total)', '2026', 'todas', true),
+    ('Roberto (Líder Produção)', '1234', 'producao', true),
+    ('Linha SMD (Eletrônica)', '1111', 'eletronica', true),
+    ('Bancada PTH (Eletrônica)', '2222', 'eletronica', true),
+    ('Montagem de Luminárias (Produção)', '3333', 'producao', true)
+ON CONFLICT (pin) DO UPDATE SET 
+    name = EXCLUDED.name,
+    master_category = EXCLUDED.master_category,
+    is_active = EXCLUDED.is_active;
 
 -- 4. Tabela de Histórico de Movimentações de Estoque
 CREATE TABLE IF NOT EXISTS public.stock_movements (
@@ -76,6 +96,7 @@ CREATE TABLE IF NOT EXISTS public.stock_movements (
     internal_code TEXT,
     manufacturer_code TEXT,
     category_names TEXT[] DEFAULT ARRAY[]::TEXT[],
+    master_categories TEXT[] DEFAULT ARRAY[]::TEXT[],
     delta INTEGER NOT NULL,
     previous_quantity INTEGER NOT NULL,
     new_quantity INTEGER NOT NULL,
@@ -84,6 +105,8 @@ CREATE TABLE IF NOT EXISTS public.stock_movements (
     pin_used TEXT,
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+ALTER TABLE public.stock_movements ADD COLUMN IF NOT EXISTS master_categories TEXT[] DEFAULT ARRAY[]::TEXT[];
 
 -- 5. Função e Trigger para atualizar updated_at
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
@@ -100,51 +123,49 @@ CREATE TRIGGER trigger_products_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION public.handle_updated_at();
 
--- 6. Habilitar RLS (Row Level Security)
+-- 6. Habilitar RLS e Permissões Robustas
 ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.operator_pins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.stock_movements ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Permitir leitura geral categorias" ON public.categories;
 DROP POLICY IF EXISTS "Permitir leitura geral autenticados" ON public.categories;
-CREATE POLICY "Permitir leitura geral autenticados" ON public.categories FOR ALL TO authenticated USING (true);
+CREATE POLICY "Permitir leitura geral categorias" ON public.categories FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Permitir leitura de produtos" ON public.products;
-CREATE POLICY "Permitir leitura de produtos" ON public.products FOR ALL TO authenticated USING (true);
+DROP POLICY IF EXISTS "Permitir acesso geral a produtos" ON public.products;
+CREATE POLICY "Permitir acesso geral a produtos" ON public.products FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Permitir leitura de pins" ON public.operator_pins;
-CREATE POLICY "Permitir leitura de pins" ON public.operator_pins FOR ALL TO authenticated USING (true);
+DROP POLICY IF EXISTS "Permitir acesso geral a operator_pins" ON public.operator_pins;
+CREATE POLICY "Permitir acesso geral a operator_pins" ON public.operator_pins FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Permitir leitura de movimentações" ON public.stock_movements;
-CREATE POLICY "Permitir leitura de movimentações" ON public.stock_movements FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
 DROP POLICY IF EXISTS "Permitir leitura e escrita pública de movimentações" ON public.stock_movements;
-CREATE POLICY "Permitir leitura e escrita pública de movimentações" ON public.stock_movements FOR ALL TO anon USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Permitir acesso geral a movimentações" ON public.stock_movements;
+CREATE POLICY "Permitir acesso geral a movimentações" ON public.stock_movements FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
 
--- 7. Habilitar Realtime de Forma 100% Segura (Sem erro se já existir na publicação)
+-- 7. Habilitar Realtime
 DO $$
 BEGIN
     BEGIN
         ALTER PUBLICATION supabase_realtime ADD TABLE public.categories;
     EXCEPTION WHEN duplicate_object THEN
-        -- Já está na publicação, ignora silenciosamente
     END;
 
     BEGIN
         ALTER PUBLICATION supabase_realtime ADD TABLE public.products;
     EXCEPTION WHEN duplicate_object THEN
-        -- Já está na publicação, ignora silenciosamente
     END;
 
     BEGIN
         ALTER PUBLICATION supabase_realtime ADD TABLE public.operator_pins;
     EXCEPTION WHEN duplicate_object THEN
-        -- Já está na publicação, ignora silenciosamente
     END;
 
     BEGIN
         ALTER PUBLICATION supabase_realtime ADD TABLE public.stock_movements;
     EXCEPTION WHEN duplicate_object THEN
-        -- Já está na publicação, ignora silenciosamente
     END;
 END $$;

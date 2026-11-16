@@ -51,6 +51,7 @@ app.*.map.json
 supabase_seed_luxpryme.sql
 *seed*.sql
 local_products*.json
+products_dataset*.json
 lib/data/datasources/luxpryme_initial_data.dart
 *.xlsx
 *.xls

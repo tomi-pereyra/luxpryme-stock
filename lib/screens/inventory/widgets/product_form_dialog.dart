@@ -35,6 +35,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   late TextEditingController _locationController;
   late TextEditingController _notesController;
 
+  late Set<String> _selectedMasterCategories;
   late Set<String> _selectedCategoryIds;
   late Set<String> _selectedSubcategories;
   final Set<String> _extraAvailableSubcategories = {};
@@ -59,6 +60,10 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         TextEditingController(text: (p?.minQuantity ?? 10).toString());
     _locationController = TextEditingController(text: p?.location ?? '');
     _notesController = TextEditingController(text: p?.notes ?? '');
+
+    // Inicializa categorias mestres
+    _selectedMasterCategories = Set.from(p?.masterCategories ?? ['eletronica']);
+    if (_selectedMasterCategories.isEmpty) _selectedMasterCategories = {'eletronica'};
 
     // Inicializa categorias selecionadas
     if (p != null && p.categoryIds.isNotEmpty) {
@@ -194,6 +199,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         code: internalCode ?? manufacturerCode,
         internalCode: internalCode,
         manufacturerCode: manufacturerCode,
+        masterCategories: _selectedMasterCategories.toList(),
         categoryIds: categoryList,
         categoryNames: categoryNameList,
         subcategories: subcategoriesList,
@@ -391,6 +397,82 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 18),
+
+                      // Categorias Mestres
+                      Text(
+                        'Categoria Mestre (Pode marcar mais de uma) *',
+                        style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.background,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            FilterChip(
+                              label: const Text('Eletrônica'),
+                              selected: _selectedMasterCategories.contains('eletronica'),
+                              selectedColor: const Color(0xFFEFF6FF),
+                              checkmarkColor: const Color(0xFF2563EB),
+                              onSelected: (val) {
+                                setState(() {
+                                  if (val) {
+                                    _selectedMasterCategories.add('eletronica');
+                                    _selectedMasterCategories.remove('outros');
+                                  } else {
+                                    if (_selectedMasterCategories.length > 1) {
+                                      _selectedMasterCategories.remove('eletronica');
+                                    }
+                                  }
+                                });
+                              },
+                            ),
+                            FilterChip(
+                              label: const Text('Produção'),
+                              selected: _selectedMasterCategories.contains('producao'),
+                              selectedColor: const Color(0xFFFEF3C7),
+                              checkmarkColor: const Color(0xFFD97706),
+                              onSelected: (val) {
+                                setState(() {
+                                  if (val) {
+                                    _selectedMasterCategories.add('producao');
+                                    _selectedMasterCategories.remove('outros');
+                                  } else {
+                                    if (_selectedMasterCategories.length > 1) {
+                                      _selectedMasterCategories.remove('producao');
+                                    }
+                                  }
+                                });
+                              },
+                            ),
+                            FilterChip(
+                              label: const Text('Outros'),
+                              selected: _selectedMasterCategories.contains('outros'),
+                              selectedColor: const Color(0xFFF3F4F6),
+                              checkmarkColor: const Color(0xFF4B5563),
+                              onSelected: (val) {
+                                setState(() {
+                                  if (val) {
+                                    _selectedMasterCategories.clear();
+                                    _selectedMasterCategories.add('outros');
+                                  } else {
+                                    if (_selectedMasterCategories.length > 1) {
+                                      _selectedMasterCategories.remove('outros');
+                                    }
+                                  }
+                                });
+                              },
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 18),
 

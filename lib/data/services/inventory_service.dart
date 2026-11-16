@@ -82,15 +82,17 @@ class InventoryService {
     _localPins = [
       OperatorPinModel(
         id: 'pin-1',
-        name: 'Tomas (Supervisor de Eletrônica)',
+        name: 'Tomas (Supervisor Geral - Acesso Total)',
         pin: '2026',
+        masterCategory: 'todas',
         isActive: true,
         createdAt: DateTime.now(),
       ),
       OperatorPinModel(
         id: 'pin-2',
-        name: 'Roberto (Monitor de Linha)',
+        name: 'Roberto (Líder Produção)',
         pin: '1234',
+        masterCategory: 'producao',
         isActive: true,
         createdAt: DateTime.now(),
       ),
@@ -98,6 +100,7 @@ class InventoryService {
         id: 'pin-3',
         name: 'Linha de Montagem SMD',
         pin: '1111',
+        masterCategory: 'eletronica',
         isActive: true,
         createdAt: DateTime.now(),
       ),
@@ -105,6 +108,15 @@ class InventoryService {
         id: 'pin-4',
         name: 'Bancada PTH / Soldagem',
         pin: '2222',
+        masterCategory: 'eletronica',
+        isActive: true,
+        createdAt: DateTime.now(),
+      ),
+      OperatorPinModel(
+        id: 'pin-5',
+        name: 'Montagem de Luminárias',
+        pin: '3333',
+        masterCategory: 'producao',
         isActive: true,
         createdAt: DateTime.now(),
       ),
@@ -282,7 +294,14 @@ class InventoryService {
     String operatorName = 'Administrador';
     if (pin != null && pin.isNotEmpty) {
       final op = await validatePin(pin);
-      if (op != null) operatorName = op.name;
+      if (op == null) throw Exception('PIN inválido ou não autorizado.');
+      if (!op.canModify(product)) {
+        throw Exception(
+          'Acesso negado: O PIN "${op.name}" (${op.masterCategoryLabel}) '
+          'não possui autorização para cadastrar produtos nesta categoria mestre.',
+        );
+      }
+      operatorName = op.name;
     }
 
     final newProduct = product.copyWith(
@@ -413,16 +432,23 @@ class InventoryService {
   }
 
   Future<void> deleteProduct(String productId, {String? pin}) async {
-    String operatorName = 'Administrador';
-    if (pin != null && pin.isNotEmpty) {
-      final op = await validatePin(pin);
-      if (op != null) operatorName = op.name;
-    }
-
     // Procura o produto antes de remover para gravar no histórico
     ProductModel? targetProduct;
     if (_localProducts.any((p) => p.id == productId)) {
       targetProduct = _localProducts.firstWhere((p) => p.id == productId);
+    }
+
+    String operatorName = 'Administrador';
+    if (pin != null && pin.isNotEmpty) {
+      final op = await validatePin(pin);
+      if (op == null) throw Exception('PIN inválido ou não autorizado.');
+      if (targetProduct != null && !op.canModify(targetProduct)) {
+        throw Exception(
+          'Acesso negado: O PIN "${op.name}" (${op.masterCategoryLabel}) '
+          'não possui autorização para excluir produtos desta categoria mestre.',
+        );
+      }
+      operatorName = op.name;
     }
 
     final movement = targetProduct != null
@@ -475,9 +501,14 @@ class InventoryService {
     String operatorName = 'Ajuste Unitário';
     if (pin != null && pin.isNotEmpty) {
       final operatorPin = await validatePin(pin);
-      if (operatorPin != null) {
-        operatorName = operatorPin.name;
+      if (operatorPin == null) throw Exception('PIN incorreto ou não autorizado.');
+      if (!operatorPin.canModify(product)) {
+        throw Exception(
+          'Acesso negado: O PIN "${operatorPin.name}" (${operatorPin.masterCategoryLabel}) '
+          'não possui autorização para alterar o item "${product.name}".',
+        );
       }
+      operatorName = operatorPin.name;
     }
 
     final int newQuantity = product.quantity + delta;
@@ -599,6 +630,18 @@ class InventoryService {
       throw Exception('PIN incorreto ou não cadastrado no sistema.');
     }
 
+    // Validação de Escopo de Categoria Mestre
+    if (!operatorPin.isMasterPin) {
+      for (var item in cartItems) {
+        if (!operatorPin.canModify(item.product)) {
+          throw Exception(
+            'Acesso negado: O PIN "${operatorPin.name}" (${operatorPin.masterCategoryLabel}) '
+            'não possui autorização para movimentar o item "${item.product.name}".',
+          );
+        }
+      }
+    }
+
     final now = DateTime.now();
 
     for (var item in cartItems) {
@@ -673,6 +716,7 @@ class InventoryService {
   Future<void> createOperatorPin({
     required String name,
     required String pin,
+    String masterCategory = 'eletronica',
   }) async {
     if (pin.trim().length != 4 || int.tryParse(pin.trim()) == null) {
       throw Exception('O PIN deve conter exatamente 4 dígitos numéricos.');
@@ -686,6 +730,7 @@ class InventoryService {
         id: 'pin-${DateTime.now().millisecondsSinceEpoch}',
         name: name.trim(),
         pin: pin.trim(),
+        masterCategory: masterCategory.toLowerCase(),
         isActive: true,
         createdAt: DateTime.now(),
       );
@@ -697,8 +742,31 @@ class InventoryService {
     await _client!.from('operator_pins').insert({
       'name': name.trim(),
       'pin': pin.trim(),
+      'master_category': masterCategory.toLowerCase(),
       'is_active': true,
     });
+  }
+
+  Future<void> moveProductMasterCategories({
+    required String productId,
+    required List<String> masterCategories,
+  }) async {
+    if (_isLocalMode || _client == null) {
+      final index = _localProducts.indexWhere((p) => p.id == productId);
+      if (index != -1) {
+        _localProducts[index] = _localProducts[index].copyWith(
+          masterCategories: masterCategories,
+          updatedAt: DateTime.now(),
+        );
+        _notifyLocal();
+      }
+      return;
+    }
+
+    await _client!
+        .from(AppConstants.tableProducts)
+        .update({'master_categories': masterCategories})
+        .eq('id', productId);
   }
 
   Future<void> deleteOperatorPin(String id) async {

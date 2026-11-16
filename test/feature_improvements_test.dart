@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:luxpryme_stock/data/models/product_model.dart';
 import 'package:luxpryme_stock/data/models/category_model.dart';
+import 'package:luxpryme_stock/data/models/operator_pin_model.dart';
 import 'package:luxpryme_stock/data/models/stock_movement_model.dart';
 import 'package:luxpryme_stock/data/services/inventory_service.dart';
 
@@ -147,6 +148,104 @@ void main() {
   group('Admin Access Control Tests', () {
     test('Validação de e-mail de administrador configurado', () {
       expect(InventoryService.adminEmail, equals('tomibr20@gmail.com'));
+    });
+  });
+
+  group('Master Category and Operator PIN Scope Tests', () {
+    final prodEletronica = ProductModel(
+      id: 'prod_elet',
+      name: 'Resistor SMD 10k',
+      masterCategories: ['eletronica'],
+      categoryIds: ['cat_1'],
+      quantity: 100,
+    );
+
+    final prodProducao = ProductModel(
+      id: 'prod_prod',
+      name: 'Caixa Plástica Slim 800',
+      masterCategories: ['producao'],
+      categoryIds: ['cat_2'],
+      quantity: 50,
+    );
+
+    final prodCompartilhado = ProductModel(
+      id: 'prod_comp',
+      name: 'Chicote de Interligação Bateria',
+      masterCategories: ['eletronica', 'producao'],
+      categoryIds: ['cat_1'],
+      quantity: 25,
+    );
+
+    final prodOutros = ProductModel(
+      id: 'prod_outros',
+      name: 'Tubo Soldável Tigre 25mm',
+      masterCategories: ['outros'],
+      categoryIds: ['cat_3'],
+      quantity: 10,
+    );
+
+    test('PIN de Eletrônica só pode movimentar itens de eletrônica', () {
+      final pinElet = OperatorPinModel(
+        id: 'pin_elet',
+        name: 'Operador SMD',
+        pin: '1111',
+        masterCategory: 'eletronica',
+        createdAt: DateTime.now(),
+      );
+
+      expect(pinElet.canModify(prodEletronica), isTrue);
+      expect(pinElet.canModify(prodCompartilhado), isTrue);
+      expect(pinElet.canModify(prodProducao), isFalse);
+      expect(pinElet.canModify(prodOutros), isFalse);
+    });
+
+    test('PIN de Produção só pode movimentar itens de produção', () {
+      final pinProd = OperatorPinModel(
+        id: 'pin_prod',
+        name: 'Operador Montagem',
+        pin: '2222',
+        masterCategory: 'producao',
+        createdAt: DateTime.now(),
+      );
+
+      expect(pinProd.canModify(prodProducao), isTrue);
+      expect(pinProd.canModify(prodCompartilhado), isTrue);
+      expect(pinProd.canModify(prodEletronica), isFalse);
+      expect(pinProd.canModify(prodOutros), isFalse);
+    });
+
+    test('PIN Mestre (todas) pode movimentar qualquer categoria', () {
+      final pinMaster = OperatorPinModel(
+        id: 'pin_master',
+        name: 'Tomas Pereyra',
+        pin: '2026',
+        masterCategory: 'todas',
+        createdAt: DateTime.now(),
+      );
+
+      expect(pinMaster.canModify(prodEletronica), isTrue);
+      expect(pinMaster.canModify(prodProducao), isTrue);
+      expect(pinMaster.canModify(prodCompartilhado), isTrue);
+      expect(pinMaster.canModify(prodOutros), isTrue);
+    });
+
+    test('Serialização e Deserialização de masterCategories no ProductModel', () {
+      final p = ProductModel(
+        id: 'p_test',
+        name: 'Sensor de Presença IP65',
+        masterCategories: ['eletronica', 'producao'],
+        categoryIds: ['c1'],
+        quantity: 15,
+      );
+
+      final map = p.toMap();
+      expect(map['master_categories'], equals(['eletronica', 'producao']));
+
+      final restored = ProductModel.fromMap(map);
+      expect(restored.masterCategories, equals(['eletronica', 'producao']));
+      expect(restored.isEletronica, isTrue);
+      expect(restored.isProducao, isTrue);
+      expect(restored.isOutros, isFalse);
     });
   });
 }

@@ -4,6 +4,8 @@ class ProductModel {
   final String? code;
   final String? internalCode;      // Código Interno
   final String? manufacturerCode;  // Código do Fabricante / Part Number
+  final String? barcode;           // Código de Barras
+  final List<String> masterCategories; // Categorias Mestres: 'eletronica', 'producao', 'outros'
   final List<String> categoryIds;  // Suporte a múltiplas categorias
   final List<String>? categoryNames; // Nomes resolvidos das categorias
   final List<String> subcategories; // Múltiplas sub-categorias do item
@@ -20,6 +22,8 @@ class ProductModel {
     this.code,
     this.internalCode,
     this.manufacturerCode,
+    this.barcode,
+    this.masterCategories = const ['eletronica'],
     required this.categoryIds,
     this.categoryNames,
     this.subcategories = const [],
@@ -48,7 +52,11 @@ class ProductModel {
   bool get isOutOfStock => quantity <= 0;
   bool get isLowStock => quantity > 0 && quantity <= minQuantity;
 
-  /// Pesquisa inteligente por palavras desordenadas em Nome, Cód. Interno, P/N, Subcategorias e Notas
+  bool get isEletronica => masterCategories.contains('eletronica');
+  bool get isProducao => masterCategories.contains('producao');
+  bool get isOutros => masterCategories.contains('outros');
+
+  /// Pesquisa inteligente por palavras desordenadas em Nome, Cód. Interno, P/N, Cód. Barras, Subcategorias e Notas
   bool matchesSearch(String query) {
     if (query.isEmpty) return true;
     final q = query.toLowerCase().trim();
@@ -61,6 +69,7 @@ class ProductModel {
     if (internalCode != null) buffer.write('${internalCode!.toLowerCase()} ');
     if (manufacturerCode != null) buffer.write('${manufacturerCode!.toLowerCase()} ');
     if (code != null) buffer.write('${code!.toLowerCase()} ');
+    if (barcode != null) buffer.write('${barcode!.toLowerCase()} ');
     if (subcategories.isNotEmpty) buffer.write('${subcategories.join(' ').toLowerCase()} ');
     if (subcategory != null) buffer.write('${subcategory!.toLowerCase()} ');
     if (location != null) buffer.write('${location!.toLowerCase()} ');
@@ -76,6 +85,18 @@ class ProductModel {
 
   factory ProductModel.fromMap(Map<String, dynamic> map,
       {List<String>? categoryNames}) {
+    // Categorias Mestres
+    List<String> parsedMasterCats = [];
+    if (map['master_categories'] is List) {
+      parsedMasterCats = (map['master_categories'] as List)
+          .map((e) => e.toString().trim().toLowerCase())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+    if (parsedMasterCats.isEmpty) {
+      parsedMasterCats = ['eletronica'];
+    }
+
     // Suporte tanto para array category_ids quanto para category_id singular
     List<String> parsedCategoryIds = [];
     if (map['category_ids'] is List) {
@@ -132,6 +153,8 @@ class ProductModel {
       code: map['code']?.toString(),
       internalCode: map['internal_code']?.toString(),
       manufacturerCode: map['manufacturer_code']?.toString(),
+      barcode: map['barcode']?.toString(),
+      masterCategories: parsedMasterCats,
       categoryIds: parsedCategoryIds,
       categoryNames: categoryNames,
       subcategories: parsedSubcategories,
@@ -155,6 +178,8 @@ class ProductModel {
       if (code != null) 'code': code,
       if (internalCode != null) 'internal_code': internalCode,
       if (manufacturerCode != null) 'manufacturer_code': manufacturerCode,
+      if (barcode != null) 'barcode': barcode,
+      'master_categories': masterCategories,
       'category_ids': categoryIds,
       'subcategories': subcategories,
       if (subcategory != null) 'subcategory': subcategory,
@@ -173,6 +198,8 @@ class ProductModel {
     String? code,
     String? internalCode,
     String? manufacturerCode,
+    String? barcode,
+    List<String>? masterCategories,
     List<String>? categoryIds,
     List<String>? categoryNames,
     List<String>? subcategories,
@@ -195,6 +222,8 @@ class ProductModel {
       code: code ?? this.code,
       internalCode: internalCode ?? this.internalCode,
       manufacturerCode: manufacturerCode ?? this.manufacturerCode,
+      barcode: barcode ?? this.barcode,
+      masterCategories: masterCategories ?? this.masterCategories,
       categoryIds: categoryIds ?? this.categoryIds,
       categoryNames: categoryNames ?? this.categoryNames,
       subcategories: finalSubcats,
