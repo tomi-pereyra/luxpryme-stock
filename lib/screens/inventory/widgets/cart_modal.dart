@@ -164,6 +164,7 @@ class _CartModalState extends State<CartModal> {
         final items = CartService.instance.items;
 
         return Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 600, maxHeight: 720),
@@ -171,7 +172,7 @@ class _CartModalState extends State<CartModal> {
               children: [
                 // Header
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 18, 16, 14),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 12, 12),
                   child: Row(
                     children: [
                       Container(
@@ -189,9 +190,9 @@ class _CartModalState extends State<CartModal> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Carrinho de Separação de Estoque',
+                              'Carrinho de Separação',
                               style: GoogleFonts.inter(
-                                fontSize: 16,
+                                fontSize: 15,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
@@ -223,29 +224,34 @@ class _CartModalState extends State<CartModal> {
                 Expanded(
                   child: items.isEmpty
                       ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.remove_shopping_cart_outlined,
-                                  size: 48, color: AppColors.textMuted),
-                              const SizedBox(height: 12),
-                              Text(
-                                'Nenhum item adicionado ao carrinho',
-                                style: GoogleFonts.inter(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.textPrimary,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.remove_shopping_cart_outlined,
+                                    size: 48, color: AppColors.textMuted),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Nenhum item adicionado ao carrinho',
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textPrimary,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Clique em "Pegar / Movimentar" em qualquer componente da lista.',
-                                style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  color: AppColors.textSecondary,
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Clique em "Pegar / Movimentar" em qualquer componente da lista.',
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         )
                       : ListView.separated(
@@ -419,35 +425,72 @@ class _CartModalState extends State<CartModal> {
                 const Divider(height: 1, color: AppColors.border),
                 Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Total a movimentar: ${CartService.instance.totalPieces} un',
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isNarrow = constraints.maxWidth < 420;
+                      if (isNarrow) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              'Total a movimentar: ${CartService.instance.totalPieces} un',
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                icon: _isProcessing
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                      )
+                                    : const Icon(Icons.lock_open, size: 18),
+                                label: Text(
+                                  _isProcessing ? 'Processando...' : 'Finalizar com PIN',
+                                  style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                                ),
+                                onPressed: (items.isEmpty || _isProcessing) ? null : _requestPinAndCheckout,
+                              ),
+                            ),
+                          ],
+                        );
+                      }
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Total a movimentar: ${CartService.instance.totalPieces} un',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                      ElevatedButton.icon(
-                        icon: _isProcessing
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
-                            : const Icon(Icons.lock_open, size: 18),
-                        label: Text(
-                          _isProcessing ? 'Processando...' : 'Finalizar com PIN',
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                        ),
-                        onPressed:
-                            (items.isEmpty || _isProcessing) ? null : _requestPinAndCheckout,
-                      ),
-                    ],
+                          ElevatedButton.icon(
+                            icon: _isProcessing
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  )
+                                : const Icon(Icons.lock_open, size: 18),
+                            label: Text(
+                              _isProcessing ? 'Processando...' : 'Finalizar com PIN',
+                              style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                            ),
+                            onPressed: (items.isEmpty || _isProcessing) ? null : _requestPinAndCheckout,
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
               ],

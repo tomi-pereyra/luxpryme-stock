@@ -402,4 +402,49 @@ void main() {
       expect(lastMov.type, equals('CART_DEPOSIT'));
     });
   });
+
+  group('Batch Add Products to Master Category (+ Itens) Tests', () {
+    test('bulkAddProductsToMasterCategory adiciona múltiplos produtos à categoria mestre com PIN Mestre', () async {
+      final service = InventoryService.instance;
+      service.setMode(localMode: true);
+
+      final products = await service.fetchProducts();
+      final p1 = products[0];
+      final p2 = products[1];
+
+      await service.bulkAddProductsToMasterCategory(
+        productIds: [p1.id, p2.id],
+        targetMasterCategoryId: 'producao',
+        pin: '2026', // PIN Mestre do Tomas
+      );
+
+      final updatedProducts = await service.fetchProducts();
+      final updatedP1 = updatedProducts.firstWhere((p) => p.id == p1.id);
+      final updatedP2 = updatedProducts.firstWhere((p) => p.id == p2.id);
+
+      expect(updatedP1.masterCategories, contains('producao'));
+      expect(updatedP2.masterCategories, contains('producao'));
+    });
+
+    test('bulkAddProductsToMasterCategory rejeita adição com PIN não-mestre', () async {
+      final service = InventoryService.instance;
+      service.setMode(localMode: true);
+
+      final products = await service.fetchProducts();
+      final p1 = products.first;
+
+      expect(
+        () => service.bulkAddProductsToMasterCategory(
+          productIds: [p1.id],
+          targetMasterCategoryId: 'eletronica',
+          pin: '1111', // PIN de Eletrônica (não é PIN mestre)
+        ),
+        throwsA(isA<Exception>().having(
+          (e) => e.toString(),
+          'message',
+          contains('Apenas operadores com PIN Mestre'),
+        )),
+      );
+    });
+  });
 }

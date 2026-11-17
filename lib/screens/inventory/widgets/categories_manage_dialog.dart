@@ -115,63 +115,64 @@ class _CategoriesManageDialogState extends State<CategoriesManageDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 550, maxHeight: 680),
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Header
+              // Header Responsivo
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppColors.primaryContainer,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.category_outlined,
-                            color: AppColors.primary, size: 20),
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Categorias de Estoque',
-                        style: GoogleFonts.inter(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ],
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryContainer,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.category_outlined,
+                        color: AppColors.primary, size: 20),
                   ),
-                  Row(
-                    children: [
-                      OutlinedButton.icon(
-                        icon: const Icon(Icons.dashboard_customize_outlined, size: 16),
-                        label: Text(
-                          'Categorias Mestres',
-                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
-                        ),
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                          MasterCategoriesManageDialog.show(context);
-                        },
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Categorias de Estoque',
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
                       ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(Icons.close, color: AppColors.textSecondary),
-                        onPressed: () => Navigator.of(context).pop(),
-                      ),
-                    ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: AppColors.textSecondary),
+                    onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  icon: const Icon(Icons.dashboard_customize_outlined, size: 15),
+                  label: Text(
+                    'Gerenciar Categorias Mestres',
+                    style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600),
+                  ),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    MasterCategoriesManageDialog.show(context);
+                  },
+                ),
+              ),
+              const SizedBox(height: 14),
 
               // Formulário de Nova Categoria
               Container(

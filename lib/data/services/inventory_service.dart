@@ -629,6 +629,8 @@ class InventoryService {
 
   bool _isLoadingProducts = false;
   List<ProductModel> _allProducts = [];
+  List<ProductModel> get currentProducts =>
+      List.unmodifiable(_isLocalMode || _client == null ? _localProducts : _allProducts);
   RealtimeChannel? _productsRealtimeChannel;
 
   Stream<List<ProductModel>> streamProducts() {
@@ -1221,6 +1223,69 @@ class InventoryService {
         .from(AppConstants.tableProducts)
         .update({'master_categories': masterCategories})
         .eq('id', productId);
+  }
+
+  Future<void> bulkAddProductsToMasterCategory({
+    required List<String> productIds,
+    required String targetMasterCategoryId,
+    required String pin,
+  }) async {
+    if (productIds.isEmpty) return;
+
+    final operatorPin = await validatePin(pin);
+    if (operatorPin == null || !operatorPin.isMasterPin) {
+      throw Exception('Apenas operadores com PIN Mestre têm permissão para adicionar produtos a categorias mestres.');
+    }
+
+    final catId = targetMasterCategoryId.toLowerCase().trim();
+    if (_isLocalMode || _client == null) {
+      for (final id in productIds) {
+        final index = _localProducts.indexWhere((p) => p.id == id);
+        if (index != -1) {
+          final current = List<String>.from(_localProducts[index].masterCategories);
+          if (!current.contains(catId)) {
+            current.add(catId);
+          }
+          if (catId != 'outros' && current.contains('outros')) {
+            current.remove('outros');
+          }
+          _localProducts[index] = _localProducts[index].copyWith(
+            masterCategories: current,
+            updatedAt: DateTime.now(),
+          );
+        }
+      }
+      _notifyLocal();
+      return;
+    }
+
+    // No Supabase, atualiza produtos individualmente para garantir sincronização precisa
+    for (final id in productIds) {
+      final pIdx = _allProducts.indexWhere((p) => p.id == id);
+      List<String> current = [];
+      if (pIdx != -1) {
+        current = List<String>.from(_allProducts[pIdx].masterCategories);
+      }
+      if (!current.contains(catId)) {
+        current.add(catId);
+      }
+      if (catId != 'outros' && current.contains('outros')) {
+        current.remove('outros');
+      }
+
+      await _client!
+          .from(AppConstants.tableProducts)
+          .update({'master_categories': current})
+          .eq('id', id);
+
+      if (pIdx != -1) {
+        _allProducts[pIdx] = _allProducts[pIdx].copyWith(masterCategories: current);
+      }
+    }
+
+    if (!_productsStreamController.isClosed) {
+      _productsStreamController.add(List.unmodifiable(_allProducts));
+    }
   }
 
   Future<void> deleteOperatorPin(String id) async {

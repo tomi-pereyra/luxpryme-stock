@@ -20,6 +20,7 @@ import 'widgets/product_card.dart';
 import 'widgets/product_form_dialog.dart';
 import 'widgets/pin_confirmation_dialog.dart';
 import 'widgets/library_mode_screen.dart';
+import 'widgets/batch_add_master_category_dialog.dart';
 
 enum SortOption {
   nameAsc('Nome (A - Z)'),
@@ -48,6 +49,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   String? _selectedSubcategory;
   final Set<String> _customSubcategories = {};
   SortOption _selectedSort = SortOption.nameAsc;
+  bool _isMobileSearchActive = false;
 
   bool get isWindowsDesktop => !kIsWeb && Platform.isWindows;
 
@@ -285,6 +287,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
     IconData icon,
     int count, {
     Color? activeColor,
+    VoidCallback? onLongPress,
   }) {
     final isSelected = _selectedMasterCategory == id;
     final Color chipColor = activeColor ??
@@ -302,6 +305,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           _selectedMasterCategory = id;
         });
       },
+      onLongPress: onLongPress,
       borderRadius: BorderRadius.circular(10),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
@@ -439,8 +443,351 @@ class _InventoryScreenState extends State<InventoryScreen> {
     return list;
   }
 
+  void _showSubcategoriesBottomSheet(
+    List<CategoryModel> categories,
+    List<ProductModel> rawProducts,
+    String masterCatId,
+    String masterCatName,
+  ) {
+    final prodsInMaster = masterCatId == 'todas'
+        ? rawProducts
+        : rawProducts.where((p) => p.masterCategories.contains(masterCatId)).toList();
+
+    final subcats = <String>{};
+    for (final p in prodsInMaster) {
+      subcats.addAll(p.subcategories);
+      if (p.subcategory != null && p.subcategory!.isNotEmpty) {
+        subcats.add(p.subcategory!);
+      }
+    }
+    final sortedSubcats = subcats.toList()..sort();
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryContainer,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Icon(Icons.folder_special_outlined,
+                            size: 18, color: AppColors.primary),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Categorias Comuns de "$masterCatName"',
+                          style: GoogleFonts.inter(
+                              fontSize: 16, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+                  child: Text(
+                    'Selecione uma categoria comum para filtrar:',
+                    style: GoogleFonts.inter(
+                        fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  leading: Icon(
+                    (_selectedCategoryId == null && _selectedSubcategory == null)
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_off,
+                    color: AppColors.primary,
+                  ),
+                  title: const Text('Todos os itens desta categoria mestre'),
+                  onTap: () {
+                    setState(() {
+                      _selectedCategoryId = null;
+                      _selectedSubcategory = null;
+                    });
+                    Navigator.pop(ctx);
+                  },
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: ListView(
+                    children: [
+                      ...categories.map((cat) {
+                        final isSelected = _selectedCategoryId == cat.id;
+                        final count = prodsInMaster
+                            .where((p) => p.categoryIds.contains(cat.id))
+                            .length;
+                        return ListTile(
+                          leading: Icon(
+                            isSelected ? Icons.check_circle : Icons.folder_outlined,
+                            color: isSelected
+                                ? AppColors.primary
+                                : AppColors.textSecondary,
+                            size: 20,
+                          ),
+                          title: Text(cat.name,
+                              style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w700
+                                      : FontWeight.w500)),
+                          trailing: count > 0
+                              ? Text('$count un',
+                                  style: const TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.textSecondary))
+                              : null,
+                          onTap: () {
+                            setState(() {
+                              _selectedCategoryId = isSelected ? null : cat.id;
+                              _selectedSubcategory = null;
+                            });
+                            Navigator.pop(ctx);
+                          },
+                        );
+                      }),
+                      if (sortedSubcats.isNotEmpty) ...[
+                        const Divider(),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 4),
+                          child: Text(
+                            'Sub-categorias:',
+                            style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textSecondary),
+                          ),
+                        ),
+                        ...sortedSubcats.map((sub) {
+                          final isSelected = _selectedSubcategory == sub;
+                          final count = prodsInMaster
+                              .where((p) =>
+                                  p.subcategories.contains(sub) ||
+                                  p.subcategory == sub)
+                              .length;
+                          return ListTile(
+                            leading: Icon(
+                              isSelected
+                                  ? Icons.check_circle
+                                  : Icons.label_outline,
+                              color: isSelected
+                                  ? AppColors.primary
+                                  : AppColors.textMuted,
+                              size: 18,
+                            ),
+                            title: Text(sub,
+                                style: GoogleFonts.inter(fontSize: 13)),
+                            trailing: Text('$count un',
+                                style: const TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.textSecondary)),
+                            onTap: () {
+                              setState(() {
+                                _selectedSubcategory = isSelected ? null : sub;
+                              });
+                              Navigator.pop(ctx);
+                            },
+                          );
+                        }),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _openBottomRightMenu(
+    List<CategoryModel> categories,
+    List<ProductModel> rawProducts,
+    List<MasterCategoryModel> masterCats,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryContainer,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.apps, color: AppColors.primary, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Menu de Ações',
+                      style: GoogleFonts.inter(
+                          fontSize: 16, fontWeight: FontWeight.w700),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // 1. + Itens
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.playlist_add, color: AppColors.primary),
+                  ),
+                  title: Text(
+                    '+ Itens',
+                    style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w700, fontSize: 14),
+                  ),
+                  subtitle: Text(
+                    'Buscar e adicionar múltiplos produtos à categoria mestre',
+                    style: GoogleFonts.inter(
+                        fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    BatchAddMasterCategoryDialog.show(
+                      context,
+                      initialMasterCategoryId: _selectedMasterCategory,
+                      masterCategories: masterCats,
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+
+                // 2. Novo Item
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDCFCE7),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.add_box_outlined,
+                        color: AppColors.stockNormal),
+                  ),
+                  title: Text(
+                    'Novo Item',
+                    style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w700, fontSize: 14),
+                  ),
+                  subtitle: Text(
+                    'Cadastrar um novo produto ou componente',
+                    style: GoogleFonts.inter(
+                        fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _openAddProductDialog(categories);
+                  },
+                ),
+                const Divider(height: 1),
+
+                // 3. Categorias de Estoque
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3E8FF),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.category_outlined,
+                        color: Color(0xFF7C3AED)),
+                  ),
+                  title: Text(
+                    'Categorias de Estoque',
+                    style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w700, fontSize: 14),
+                  ),
+                  subtitle: Text(
+                    'Gerenciar categorias e tipos comuns',
+                    style: GoogleFonts.inter(
+                        fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    showDialog(
+                      context: context,
+                      builder: (_) => const CategoriesManageDialog(),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+
+                // 4. Biblioteca de Modelos
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.account_tree_outlined,
+                        color: Color(0xFFD97706)),
+                  ),
+                  title: Text(
+                    'Biblioteca de Modelos',
+                    style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w700, fontSize: 14),
+                  ),
+                  subtitle: Text(
+                    'Visualizar catálogo organizado em modelos',
+                    style: GoogleFonts.inter(
+                        fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _openLibraryMode(categories, rawProducts);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 700;
     final userEmail = InventoryService.instance.currentUser?.email ??
         (InventoryService.instance.isLocalMode
             ? 'Tomas (Supervisor de Eletrônica)'
@@ -453,143 +800,190 @@ class _InventoryScreenState extends State<InventoryScreen> {
         final categoryMap = {for (var c in categories) c.id: c.name};
 
         return Scaffold(
-          appBar: AppBar(
-            leading: const Padding(
-              padding: EdgeInsets.only(left: 16),
-              child: LuxLogo(
-                size: 34,
-                variant: LuxLogoVariant.whiteOnBlue,
-                showBrandName: false,
-              ),
-            ),
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  AppConstants.appName,
-                  style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800),
-                ),
-                Text(
-                  'Setor de Eletrônica • $userEmail',
-                  style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary),
-                ),
-              ],
-            ),
-            actions: [
-              // Botão Carrinho de Separação com Badge
-              AnimatedBuilder(
-                animation: CartService.instance,
-                builder: (context, _) {
-                  final count = CartService.instance.itemCount;
-                  return Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.shopping_cart_outlined),
-                        tooltip: 'Carrinho de Separação (Finalizar com PIN)',
-                        onPressed: _openCartModal,
-                      ),
-                      if (count > 0)
-                        Positioned(
-                          right: 6,
-                          top: 8,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: AppColors.stockZero,
-                              shape: BoxShape.circle,
-                            ),
-                            constraints: const BoxConstraints(
-                              minWidth: 16,
-                              minHeight: 16,
-                            ),
-                            child: Text(
-                              '$count',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  );
-                },
-              ),
-
-              // Botão Histórico e Relatórios
-              IconButton(
-                icon: const Icon(Icons.history_outlined),
-                tooltip: 'Histórico & Relatórios de Estoque',
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => HistoryScreen(categories: categories),
+          appBar: (_isMobileSearchActive && isMobile)
+              ? AppBar(
+                  leading: IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () {
+                      setState(() {
+                        _isMobileSearchActive = false;
+                        _searchController.clear();
+                        _searchQuery = '';
+                      });
+                    },
+                  ),
+                  title: TextField(
+                    controller: _searchController,
+                    autofocus: true,
+                    style: GoogleFonts.inter(fontSize: 15),
+                    decoration: InputDecoration(
+                      hintText: 'Buscar por nome, código, P/N...',
+                      hintStyle: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted),
+                      border: InputBorder.none,
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 20),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                              },
+                            )
+                          : null,
                     ),
-                  );
-                },
-              ),
-
-              // Botão Painel do Administrador (Exclusivo Windows e restrito para tomibr20@gmail.com)
-              if (isWindowsDesktop && InventoryService.instance.isAdminUser) ...[
-                IconButton(
-                  icon: const Icon(Icons.admin_panel_settings_outlined, color: AppColors.primary),
-                  tooltip: 'Painel do Administrador (Exclusivo tomibr20@gmail.com)',
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const AdminPanelScreen(),
+                  ),
+                )
+              : AppBar(
+                  leading: const Padding(
+                    padding: EdgeInsets.only(left: 16),
+                    child: LuxLogo(
+                      size: 34,
+                      variant: LuxLogoVariant.whiteOnBlue,
+                      showBrandName: false,
+                    ),
+                  ),
+                  title: isMobile
+                      ? null
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              AppConstants.appName,
+                              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800),
+                            ),
+                            Text(
+                              'Setor de Eletrônica • $userEmail',
+                              style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary),
+                            ),
+                          ],
+                        ),
+                  actions: [
+                    // Lupa de busca no menu superior para versão mobile
+                    if (isMobile)
+                      IconButton(
+                        icon: const Icon(Icons.search),
+                        tooltip: 'Buscar componentes',
+                        onPressed: () {
+                          setState(() {
+                            _isMobileSearchActive = true;
+                          });
+                        },
                       ),
-                    );
-                  },
+
+                    // Botão Carrinho de Separação com Badge
+                    AnimatedBuilder(
+                      animation: CartService.instance,
+                      builder: (context, _) {
+                        final count = CartService.instance.itemCount;
+                        return Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.shopping_cart_outlined),
+                              tooltip: 'Carrinho de Separação (Finalizar com PIN)',
+                              onPressed: _openCartModal,
+                            ),
+                            if (count > 0)
+                              Positioned(
+                                right: 6,
+                                top: 8,
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.stockZero,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  constraints: const BoxConstraints(
+                                    minWidth: 16,
+                                    minHeight: 16,
+                                  ),
+                                  child: Text(
+                                    '$count',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+
+                    // Botão Histórico e Relatórios
+                    IconButton(
+                      icon: const Icon(Icons.history_outlined),
+                      tooltip: 'Histórico & Relatórios de Estoque',
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => HistoryScreen(categories: categories),
+                          ),
+                        );
+                      },
+                    ),
+
+                    // Botão Painel do Administrador (Exclusivo Windows e restrito para tomibr20@gmail.com)
+                    if (isWindowsDesktop && InventoryService.instance.isAdminUser) ...[
+                      IconButton(
+                        icon: const Icon(Icons.admin_panel_settings_outlined, color: AppColors.primary),
+                        tooltip: 'Painel do Administrador (Exclusivo tomibr20@gmail.com)',
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const AdminPanelScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+
+                    // Gerenciar Categorias (Apenas no desktop; no mobile fica no menu inferior direito)
+                    if (!isMobile)
+                      IconButton(
+                        icon: const Icon(Icons.category_outlined),
+                        tooltip: 'Gerenciar Categorias',
+                        onPressed: () {
+                          showDialog(
+                            context: context,
+                            builder: (_) => const CategoriesManageDialog(),
+                          );
+                        },
+                      ),
+
+                    // Sincronizar Estoque
+                    IconButton(
+                      icon: const Icon(Icons.refresh),
+                      tooltip: 'Sincronizar Estoque',
+                      onPressed: () async {
+                        final messenger = ScaffoldMessenger.of(context);
+                        try {
+                          await InventoryService.instance.fetchProducts();
+                          messenger.showSnackBar(
+                            const SnackBar(
+                              content: Text('Estoque sincronizado com sucesso.'),
+                              duration: Duration(seconds: 1),
+                            ),
+                          );
+                        } catch (e) {
+                          messenger.showSnackBar(
+                            SnackBar(content: Text('Erro ao atualizar: $e')),
+                          );
+                        }
+                      },
+                    ),
+
+                    // Logout
+                    IconButton(
+                      icon: const Icon(Icons.logout_outlined, color: AppColors.stockZero),
+                      tooltip: 'Sair da conta',
+                      onPressed: _handleLogout,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                 ),
-              ],
-
-              // Gerenciar Categorias
-              IconButton(
-                icon: const Icon(Icons.category_outlined),
-                tooltip: 'Gerenciar Categorias',
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (_) => const CategoriesManageDialog(),
-                  );
-                },
-              ),
-
-              // Sincronizar Estoque
-              IconButton(
-                icon: const Icon(Icons.refresh),
-                tooltip: 'Sincronizar Estoque',
-                onPressed: () async {
-                  final messenger = ScaffoldMessenger.of(context);
-                  try {
-                    await InventoryService.instance.fetchProducts();
-                    messenger.showSnackBar(
-                      const SnackBar(
-                        content: Text('Estoque sincronizado com sucesso.'),
-                        duration: Duration(seconds: 1),
-                      ),
-                    );
-                  } catch (e) {
-                    messenger.showSnackBar(
-                      SnackBar(content: Text('Erro ao atualizar: $e')),
-                    );
-                  }
-                },
-              ),
-
-              // Logout
-              IconButton(
-                icon: const Icon(Icons.logout_outlined, color: AppColors.stockZero),
-                tooltip: 'Sair da conta',
-                onPressed: _handleLogout,
-              ),
-              const SizedBox(width: 8),
-            ],
-          ),
           body: StreamBuilder<List<ProductModel>>(
             stream: InventoryService.instance.streamProducts(),
             builder: (context, prodSnapshot) {
@@ -609,215 +1003,326 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
                   return Container(
                     color: Colors.white,
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          _buildMasterCategoryChip(
-                            'todas',
-                            'Todas',
-                            Icons.dashboard_outlined,
-                            rawProducts.length,
-                          ),
-                          const SizedBox(width: 8),
-                          ...masterCats.map((mc) {
-                            final count = rawProducts
-                                .where((p) => p.masterCategories.contains(mc.id))
-                                .length;
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: _buildMasterCategoryChip(
-                                mc.id,
-                                mc.name,
-                                mc.icon,
-                                count,
-                                activeColor: mc.color,
-                              ),
-                            );
-                          }),
-                          // Botão Gerenciar Categorias Mestres (PIN Mestre)
-                          InkWell(
-                            onTap: () => MasterCategoriesManageDialog.show(context),
-                            borderRadius: BorderRadius.circular(10),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: AppColors.background,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: AppColors.border),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.tune, size: 16, color: AppColors.textSecondary),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'Gerenciar',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.textSecondary,
+                    padding: EdgeInsets.fromLTRB(16, isMobile ? 6 : 10, isMobile ? 12 : 16, 4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                _buildMasterCategoryChip(
+                                  'todas',
+                                  'Todas',
+                                  Icons.dashboard_outlined,
+                                  rawProducts.length,
+                                  onLongPress: isMobile
+                                      ? () => _showSubcategoriesBottomSheet(
+                                            categories,
+                                            rawProducts,
+                                            'todas',
+                                            'Todas',
+                                          )
+                                      : null,
+                                ),
+                                const SizedBox(width: 8),
+                                ...masterCats.map((mc) {
+                                  final count = rawProducts
+                                      .where((p) => p.masterCategories.contains(mc.id))
+                                      .length;
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: _buildMasterCategoryChip(
+                                      mc.id,
+                                      mc.name,
+                                      mc.icon,
+                                      count,
+                                      activeColor: mc.color,
+                                      onLongPress: isMobile
+                                          ? () => _showSubcategoriesBottomSheet(
+                                                categories,
+                                                rawProducts,
+                                                mc.id,
+                                                mc.name,
+                                              )
+                                          : null,
+                                    ),
+                                  );
+                                }),
+                                // Botão Gerenciar Categorias Mestres (PIN Mestre)
+                                InkWell(
+                                  onTap: () => MasterCategoriesManageDialog.show(context),
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.background,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: AppColors.border),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.tune, size: 16, color: AppColors.textSecondary),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          'Gerenciar',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.textSecondary,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        // No celular: botão compacto de ordenação no canto direito da barra de categorias mestres
+                        if (isMobile) ...[
+                          const SizedBox(width: 6),
+                          PopupMenuButton<SortOption>(
+                            tooltip: 'Ordenar produtos',
+                            initialValue: _selectedSort,
+                            onSelected: (option) {
+                              setState(() => _selectedSort = option);
+                            },
+                            itemBuilder: (context) => SortOption.values.map((opt) {
+                              return PopupMenuItem<SortOption>(
+                                value: opt,
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      _selectedSort == opt
+                                          ? Icons.radio_button_checked
+                                          : Icons.radio_button_off,
+                                      size: 16,
+                                      color: _selectedSort == opt
+                                          ? AppColors.primary
+                                          : AppColors.textMuted,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      opt.label,
+                                      style: GoogleFonts.inter(fontSize: 13),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppColors.background,
+                                border: Border.all(color: AppColors.border),
+                                borderRadius: BorderRadius.circular(10),
                               ),
+                              child: const Icon(Icons.sort, size: 20, color: AppColors.textPrimary),
                             ),
                           ),
                         ],
-                      ),
+                      ],
                     ),
                   );
                 },
               ),
 
-              // 1. Barra de Busca e Ordenação
-              Container(
-                color: Colors.white,
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                child: Row(
-                  children: [
-                    // Campo de Busca inteligente
-                    Expanded(
-                      child: TextField(
-                        controller: _searchController,
-                        decoration: InputDecoration(
-                          hintText: 'Buscar por nome, cód. interno ou part number...',
-                          prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary),
-                          suffixIcon: _searchQuery.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear, size: 18),
-                                  onPressed: () => _searchController.clear(),
-                                )
-                              : null,
-                          contentPadding:
-                              const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                          isDense: true,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-
-                    // Menu de Ordenação
-                    PopupMenuButton<SortOption>(
-                      tooltip: 'Ordenar produtos',
-                      initialValue: _selectedSort,
-                      onSelected: (option) {
-                        setState(() => _selectedSort = option);
-                      },
-                      itemBuilder: (context) => SortOption.values.map((opt) {
-                        return PopupMenuItem<SortOption>(
-                          value: opt,
-                          child: Row(
-                            children: [
-                              Icon(
-                                _selectedSort == opt
-                                    ? Icons.radio_button_checked
-                                    : Icons.radio_button_off,
-                                size: 16,
-                                color: _selectedSort == opt
-                                    ? AppColors.primary
-                                    : AppColors.textMuted,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                opt.label,
-                                style: GoogleFonts.inter(fontSize: 13),
-                              ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: AppColors.background,
-                          border: Border.all(color: AppColors.border),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.sort, size: 18, color: AppColors.textPrimary),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Ordenar',
-                              style: GoogleFonts.inter(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-
-                    // Botão Modo Biblioteca (Menu Desdobrável)
-                    InkWell(
-                      onTap: () => _openLibraryMode(categories, rawProducts),
-                      borderRadius: BorderRadius.circular(10),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              // Chip indicando filtro de categoria comum ativo no mobile
+              if (isMobile && (_selectedCategoryId != null || _selectedSubcategory != null))
+                Container(
+                  color: Colors.white,
+                  padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
                           color: AppColors.primaryContainer,
+                          borderRadius: BorderRadius.circular(8),
                           border: Border.all(color: AppColors.primaryLight),
-                          borderRadius: BorderRadius.circular(10),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.account_tree_outlined, size: 18, color: AppColors.primaryDark),
-                            const SizedBox(width: 6),
+                            const Icon(Icons.filter_alt, size: 14, color: AppColors.primaryDark),
+                            const SizedBox(width: 4),
                             Text(
-                              'Biblioteca',
+                              'Filtro: ${_selectedSubcategory ?? categoryMap[_selectedCategoryId] ?? ""}',
                               style: GoogleFonts.inter(
-                                fontSize: 13,
+                                fontSize: 11,
                                 fontWeight: FontWeight.w700,
                                 color: AppColors.primaryDark,
                               ),
                             ),
+                            const SizedBox(width: 6),
+                            InkWell(
+                              onTap: () {
+                                setState(() {
+                                  _selectedCategoryId = null;
+                                  _selectedSubcategory = null;
+                                });
+                              },
+                              child: const Icon(Icons.close, size: 14, color: AppColors.primaryDark),
+                            ),
                           ],
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
 
-              // 2. Filtro Horizontal de Categorias (Suporta Múltiplas Categorias & Sub-categorias)
-              Container(
-                color: Colors.white,
-                padding: const EdgeInsets.only(bottom: 12),
-                child: CategoryFilterBar(
-                  categories: categories,
-                  selectedCategoryId: _selectedCategoryId,
-                  selectedSubcategory: _selectedSubcategory,
-                  availableSubcategories: availableSubcategories,
-                  onSelectCategory: (id) {
-                    setState(() {
-                      _selectedCategoryId = id;
-                      _selectedSubcategory = null;
-                    });
-                  },
-                  onSelectSubcategory: (sub) {
-                    setState(() => _selectedSubcategory = sub);
-                  },
-                  onAddSubcategory: (newSub) {
-                    setState(() {
-                      _customSubcategories.add(newSub);
-                      _selectedSubcategory = newSub;
-                    });
-                  },
-                  onManageCategories: () {
-                    showDialog(
-                      context: context,
-                      builder: (_) => const CategoriesManageDialog(),
-                    );
-                  },
+              // 1. Barra de Busca e Ordenação (Apenas versão Desktop)
+              if (!isMobile)
+                Container(
+                  color: Colors.white,
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: Row(
+                    children: [
+                      // Campo de Busca inteligente
+                      Expanded(
+                        child: TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            hintText: 'Buscar por nome, cód. interno ou part number...',
+                            prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary),
+                            suffixIcon: _searchQuery.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear, size: 18),
+                                    onPressed: () => _searchController.clear(),
+                                  )
+                                : null,
+                            contentPadding:
+                                const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+
+                      // Menu de Ordenação
+                      PopupMenuButton<SortOption>(
+                        tooltip: 'Ordenar produtos',
+                        initialValue: _selectedSort,
+                        onSelected: (option) {
+                          setState(() => _selectedSort = option);
+                        },
+                        itemBuilder: (context) => SortOption.values.map((opt) {
+                          return PopupMenuItem<SortOption>(
+                            value: opt,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _selectedSort == opt
+                                      ? Icons.radio_button_checked
+                                      : Icons.radio_button_off,
+                                  size: 16,
+                                  color: _selectedSort == opt
+                                      ? AppColors.primary
+                                      : AppColors.textMuted,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  opt.label,
+                                  style: GoogleFonts.inter(fontSize: 13),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: AppColors.background,
+                            border: Border.all(color: AppColors.border),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.sort, size: 18, color: AppColors.textPrimary),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Ordenar',
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Botão Modo Biblioteca (Menu Desdobrável)
+                      InkWell(
+                        onTap: () => _openLibraryMode(categories, rawProducts),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryContainer,
+                            border: Border.all(color: AppColors.primaryLight),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.account_tree_outlined, size: 18, color: AppColors.primaryDark),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Biblioteca',
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primaryDark,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+
+              // 2. Filtro Horizontal de Categorias (Apenas versão Desktop)
+              if (!isMobile)
+                Container(
+                  color: Colors.white,
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: CategoryFilterBar(
+                    categories: categories,
+                    selectedCategoryId: _selectedCategoryId,
+                    selectedSubcategory: _selectedSubcategory,
+                    availableSubcategories: availableSubcategories,
+                    onSelectCategory: (id) {
+                      setState(() {
+                        _selectedCategoryId = id;
+                        _selectedSubcategory = null;
+                      });
+                    },
+                    onSelectSubcategory: (sub) {
+                      setState(() => _selectedSubcategory = sub);
+                    },
+                    onAddSubcategory: (newSub) {
+                      setState(() {
+                        _customSubcategories.add(newSub);
+                        _selectedSubcategory = newSub;
+                      });
+                    },
+                    onManageCategories: () {
+                      showDialog(
+                        context: context,
+                        builder: (_) => const CategoriesManageDialog(),
+                      );
+                    },
+                  ),
+                ),
 
               const Divider(height: 1, color: AppColors.border),
 
@@ -927,13 +1432,14 @@ class _InventoryScreenState extends State<InventoryScreen> {
           );
         },
       ),
-          floatingActionButton: FloatingActionButton.extended(
-            onPressed: () => _openAddProductDialog(categories),
-            icon: const Icon(Icons.add),
-            label: Text(
-              'Novo Item',
-              style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+          floatingActionButton: FloatingActionButton(
+            onPressed: () => _openBottomRightMenu(
+              categories,
+              InventoryService.instance.currentProducts,
+              InventoryService.instance.masterCategories,
             ),
+            tooltip: 'Menu de Ações (+ Itens, Novo Item, Categorias, Biblioteca)',
+            child: const Icon(Icons.menu),
           ),
         );
       },

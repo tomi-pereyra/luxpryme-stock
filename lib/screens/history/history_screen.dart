@@ -56,6 +56,14 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   final TextEditingController _itemSearchController = TextEditingController();
+  bool _isFiltersExpanded = false;
+
+  bool get _hasActiveFilters =>
+      _selectedSourceFilter != HistorySourceFilter.all ||
+      _selectedOperator != null ||
+      _selectedCategoryName != null ||
+      _selectedPeriod != HistoryPeriodFilter.all ||
+      _selectedQtyFilter != HistoryQuantityFilter.all;
 
   String _searchItemQuery = '';
   String? _selectedCategoryName;
@@ -387,9 +395,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          'Histórico & Relatórios de Estoque',
-          style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700),
+        title: LayoutBuilder(
+          builder: (context, constraints) {
+            final isMobile = MediaQuery.of(context).size.width < 600;
+            return Text(
+              isMobile ? 'Histórico' : 'Histórico & Relatórios de Estoque',
+              style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700),
+            );
+          },
         ),
         actions: [
           IconButton(
@@ -481,7 +494,65 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     ),
                     const SizedBox(height: 10),
 
+                    if (MediaQuery.of(context).size.width < 650) ...[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          InkWell(
+                            onTap: () => setState(() => _isFiltersExpanded = !_isFiltersExpanded),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: _hasActiveFilters ? AppColors.primaryContainer : AppColors.background,
+                                border: Border.all(color: _hasActiveFilters ? AppColors.primary : AppColors.border),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.tune, size: 14, color: _hasActiveFilters ? AppColors.primary : AppColors.textSecondary),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    _isFiltersExpanded ? 'Ocultar Filtros' : 'Filtros Avançados',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: _hasActiveFilters ? AppColors.primary : AppColors.textSecondary,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Icon(
+                                    _isFiltersExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                                    size: 16,
+                                    color: _hasActiveFilters ? AppColors.primary : AppColors.textSecondary,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          if (_hasActiveFilters)
+                            TextButton.icon(
+                              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                              icon: const Icon(Icons.clear, size: 14, color: AppColors.stockZero),
+                              label: const Text('Limpar', style: TextStyle(fontSize: 12, color: AppColors.stockZero)),
+                              onPressed: () {
+                                setState(() {
+                                  _selectedSourceFilter = HistorySourceFilter.all;
+                                  _selectedOperator = null;
+                                  _selectedCategoryName = null;
+                                  _selectedPeriod = HistoryPeriodFilter.all;
+                                  _selectedQtyFilter = HistoryQuantityFilter.all;
+                                });
+                              },
+                            ),
+                        ],
+                      ),
+                      if (_isFiltersExpanded) const SizedBox(height: 8),
+                    ],
+
                     // Linha de seletores principais
+                    if (MediaQuery.of(context).size.width >= 650 || _isFiltersExpanded)
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
@@ -784,20 +855,24 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             SizedBox(
                               height: MediaQuery.of(context).size.height * 0.4,
                               child: Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Icon(Icons.history_toggle_off,
-                                        size: 48, color: AppColors.textMuted),
-                                    const SizedBox(height: 12),
-                                    Text(
-                                      'Nenhuma movimentação registrada com os filtros atuais.',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 14,
-                                        color: AppColors.textSecondary,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(Icons.history_toggle_off,
+                                          size: 48, color: AppColors.textMuted),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        'Nenhuma movimentação registrada com os filtros atuais.',
+                                        textAlign: TextAlign.center,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 14,
+                                          color: AppColors.textSecondary,
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
