@@ -1288,6 +1288,65 @@ class InventoryService {
     }
   }
 
+  Future<void> bulkRemoveProductsFromMasterCategory({
+    required List<String> productIds,
+    required String targetMasterCategoryId,
+    required String pin,
+  }) async {
+    if (productIds.isEmpty) return;
+
+    final operatorPin = await validatePin(pin);
+    if (operatorPin == null || !operatorPin.isMasterPin) {
+      throw Exception('Apenas operadores com PIN Mestre têm permissão para remover produtos de categorias mestres.');
+    }
+
+    final catId = targetMasterCategoryId.toLowerCase().trim();
+    if (_isLocalMode || _client == null) {
+      for (final id in productIds) {
+        final index = _localProducts.indexWhere((p) => p.id == id);
+        if (index != -1) {
+          final current = List<String>.from(_localProducts[index].masterCategories);
+          current.remove(catId);
+          if (current.isEmpty) {
+            current.add('outros');
+          }
+          _localProducts[index] = _localProducts[index].copyWith(
+            masterCategories: current,
+            updatedAt: DateTime.now(),
+          );
+        }
+      }
+      _notifyLocal();
+      return;
+    }
+
+    // No Supabase:
+    for (final id in productIds) {
+      final pIdx = _allProducts.indexWhere((p) => p.id == id);
+      List<String> current = [];
+      if (pIdx != -1) {
+        current = List<String>.from(_allProducts[pIdx].masterCategories);
+      }
+      current.remove(catId);
+      if (current.isEmpty) {
+        current.add('outros');
+      }
+
+      await _client!
+          .from(AppConstants.tableProducts)
+          .update({'master_categories': current})
+          .eq('id', id);
+
+      if (pIdx != -1) {
+        _allProducts[pIdx] = _allProducts[pIdx].copyWith(masterCategories: current);
+      }
+    }
+
+    if (!_productsStreamController.isClosed) {
+      _productsStreamController.add(List.unmodifiable(_allProducts));
+    }
+  }
+
   Future<void> deleteOperatorPin(String id) async {
     if (_isLocalMode || _client == null) {
       _localPins.removeWhere((p) => p.id == id);

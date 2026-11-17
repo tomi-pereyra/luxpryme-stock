@@ -446,5 +446,54 @@ void main() {
         )),
       );
     });
+
+    test('bulkRemoveProductsFromMasterCategory remove produto da categoria mestre e atribui a outros se vazia', () async {
+      final service = InventoryService.instance;
+      service.setMode(localMode: true);
+
+      final products = await service.fetchProducts();
+      final p1 = products.first;
+
+      // Primeiro garante que está em producao
+      await service.bulkAddProductsToMasterCategory(
+        productIds: [p1.id],
+        targetMasterCategoryId: 'producao',
+        pin: '2026',
+      );
+
+      // Agora remove de producao
+      await service.bulkRemoveProductsFromMasterCategory(
+        productIds: [p1.id],
+        targetMasterCategoryId: 'producao',
+        pin: '2026',
+      );
+
+      final updatedProducts = await service.fetchProducts();
+      final updatedP1 = updatedProducts.firstWhere((p) => p.id == p1.id);
+
+      expect(updatedP1.masterCategories.contains('producao'), isFalse);
+      expect(updatedP1.masterCategories.isNotEmpty, isTrue);
+    });
+
+    test('bulkRemoveProductsFromMasterCategory rejeita remoção com PIN não-mestre', () async {
+      final service = InventoryService.instance;
+      service.setMode(localMode: true);
+
+      final products = await service.fetchProducts();
+      final p1 = products.first;
+
+      expect(
+        () => service.bulkRemoveProductsFromMasterCategory(
+          productIds: [p1.id],
+          targetMasterCategoryId: 'eletronica',
+          pin: '1111', // PIN de Eletrônica, não mestre
+        ),
+        throwsA(isA<Exception>().having(
+          (e) => e.toString(),
+          'message',
+          contains('Apenas operadores com PIN Mestre'),
+        )),
+      );
+    });
   });
 }

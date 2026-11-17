@@ -687,6 +687,39 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       context,
                       initialMasterCategoryId: _selectedMasterCategory,
                       masterCategories: masterCats,
+                      mode: BatchItemMode.add,
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+
+                // 2. - Itens
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEE2E2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.playlist_remove, color: AppColors.stockZero),
+                  ),
+                  title: Text(
+                    '- Itens',
+                    style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.stockZero),
+                  ),
+                  subtitle: Text(
+                    'Buscar e desvincular produtos de uma categoria mestre',
+                    style: GoogleFonts.inter(
+                        fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    BatchAddMasterCategoryDialog.show(
+                      context,
+                      initialMasterCategoryId: _selectedMasterCategory,
+                      masterCategories: masterCats,
+                      mode: BatchItemMode.remove,
                     );
                   },
                 ),

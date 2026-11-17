@@ -6,20 +6,25 @@ import '../../../data/models/master_category_model.dart';
 import '../../../data/models/product_model.dart';
 import '../../../data/services/inventory_service.dart';
 
+enum BatchItemMode { add, remove }
+
 class BatchAddMasterCategoryDialog extends StatefulWidget {
   final String initialMasterCategoryId;
   final List<MasterCategoryModel> masterCategories;
+  final BatchItemMode mode;
 
   const BatchAddMasterCategoryDialog({
     super.key,
     required this.initialMasterCategoryId,
     required this.masterCategories,
+    this.mode = BatchItemMode.add,
   });
 
   static Future<void> show(
     BuildContext context, {
     required String initialMasterCategoryId,
     required List<MasterCategoryModel> masterCategories,
+    BatchItemMode mode = BatchItemMode.add,
   }) {
     return showDialog(
       context: context,
@@ -27,6 +32,7 @@ class BatchAddMasterCategoryDialog extends StatefulWidget {
       builder: (_) => BatchAddMasterCategoryDialog(
         initialMasterCategoryId: initialMasterCategoryId,
         masterCategories: masterCategories,
+        mode: mode,
       ),
     );
   }
@@ -45,6 +51,8 @@ class _BatchAddMasterCategoryDialogState
   String _searchQuery = '';
   bool _isSaving = false;
   String? _errorMessage;
+
+  bool get isAddMode => widget.mode == BatchItemMode.add;
 
   @override
   void initState() {
@@ -85,7 +93,7 @@ class _BatchAddMasterCategoryDialogState
         _selectedProductIds.remove(product.id);
       } else {
         _selectedProductIds.add(product.id);
-        // Regra solicitada: ao selecionar, limpa a busca e mantém o foco no campo
+        // Ao selecionar, apaga o texto da busca e mantém o foco no campo de texto
         _searchController.clear();
         _searchQuery = '';
         _searchFocusNode.requestFocus();
@@ -104,6 +112,9 @@ class _BatchAddMasterCategoryDialogState
       ),
     );
 
+    final actionLabel = isAddMode ? 'adicionar' : 'remover';
+    final preposition = isAddMode ? 'à categoria mestre' : 'da categoria mestre';
+
     final pinController = TextEditingController();
     String? pinError;
 
@@ -120,11 +131,14 @@ class _BatchAddMasterCategoryDialogState
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: AppColors.primaryContainer,
+                      color: isAddMode ? AppColors.primaryContainer : const Color(0xFFFEE2E2),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(Icons.admin_panel_settings_outlined,
-                        color: AppColors.primary, size: 22),
+                    child: Icon(
+                      isAddMode ? Icons.admin_panel_settings_outlined : Icons.remove_circle_outline,
+                      color: isAddMode ? AppColors.primary : AppColors.stockZero,
+                      size: 22,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   const Text('Autorização com PIN Mestre'),
@@ -135,7 +149,7 @@ class _BatchAddMasterCategoryDialogState
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Para adicionar ${_selectedProductIds.length} item(ns) à categoria mestre "${targetCategory.name}", digite o PIN de 4 dígitos:',
+                    'Para $actionLabel ${_selectedProductIds.length} item(ns) $preposition "${targetCategory.name}", digite o PIN de 4 dígitos:',
                     style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
                   ),
                   const SizedBox(height: 16),
@@ -178,6 +192,9 @@ class _BatchAddMasterCategoryDialogState
                   child: const Text('Cancelar'),
                 ),
                 ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isAddMode ? AppColors.primary : AppColors.stockZero,
+                  ),
                   onPressed: () {
                     final p = pinController.text.trim();
                     if (p.length == 4) {
@@ -203,19 +220,29 @@ class _BatchAddMasterCategoryDialogState
     });
 
     try {
-      await InventoryService.instance.bulkAddProductsToMasterCategory(
-        productIds: _selectedProductIds.toList(),
-        targetMasterCategoryId: _selectedMasterCategoryId,
-        pin: pinConfirmed,
-      );
+      if (isAddMode) {
+        await InventoryService.instance.bulkAddProductsToMasterCategory(
+          productIds: _selectedProductIds.toList(),
+          targetMasterCategoryId: _selectedMasterCategoryId,
+          pin: pinConfirmed,
+        );
+      } else {
+        await InventoryService.instance.bulkRemoveProductsFromMasterCategory(
+          productIds: _selectedProductIds.toList(),
+          targetMasterCategoryId: _selectedMasterCategoryId,
+          pin: pinConfirmed,
+        );
+      }
 
       if (mounted) {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            backgroundColor: AppColors.stockNormal,
+            backgroundColor: isAddMode ? AppColors.stockNormal : AppColors.primary,
             content: Text(
-              'Sucesso! ${_selectedProductIds.length} produtos adicionados à categoria "${targetCategory.name}".',
+              isAddMode
+                  ? 'Sucesso! ${_selectedProductIds.length} produto(s) adicionado(s) à categoria "${targetCategory.name}".'
+                  : 'Sucesso! ${_selectedProductIds.length} produto(s) removido(s) da categoria "${targetCategory.name}".',
               style: GoogleFonts.inter(fontWeight: FontWeight.w600),
             ),
           ),
@@ -243,6 +270,9 @@ class _BatchAddMasterCategoryDialogState
       ),
     );
 
+    final actionColor = isAddMode ? AppColors.primary : AppColors.stockZero;
+    final actionBg = isAddMode ? AppColors.primaryContainer : const Color(0xFFFEE2E2);
+
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -250,7 +280,7 @@ class _BatchAddMasterCategoryDialogState
         constraints: const BoxConstraints(maxWidth: 620, maxHeight: 750),
         child: Column(
           children: [
-            // Header com Seleção da Categoria Destino
+            // Header com Seleção da Categoria Alvo
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 12, 12),
               child: Row(
@@ -258,10 +288,14 @@ class _BatchAddMasterCategoryDialogState
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: AppColors.primaryContainer,
+                      color: actionBg,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(Icons.playlist_add, color: AppColors.primary, size: 22),
+                    child: Icon(
+                      isAddMode ? Icons.playlist_add : Icons.playlist_remove,
+                      color: actionColor,
+                      size: 22,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -269,13 +303,13 @@ class _BatchAddMasterCategoryDialogState
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '+ Itens na Categoria',
+                          isAddMode ? '+ Itens na Categoria' : '- Itens da Categoria',
                           style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700),
                         ),
                         Row(
                           children: [
                             Text(
-                              'Destino: ',
+                              isAddMode ? 'Adicionar à: ' : 'Remover de: ',
                               style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
                             ),
                             DropdownButtonHideUnderline(
@@ -285,7 +319,7 @@ class _BatchAddMasterCategoryDialogState
                                 style: GoogleFonts.inter(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
-                                  color: AppColors.primaryDark,
+                                  color: actionColor,
                                 ),
                                 items: validCategories.map((mc) {
                                   return DropdownMenuItem(
@@ -295,7 +329,10 @@ class _BatchAddMasterCategoryDialogState
                                 }).toList(),
                                 onChanged: (val) {
                                   if (val != null) {
-                                    setState(() => _selectedMasterCategoryId = val);
+                                    setState(() {
+                                      _selectedMasterCategoryId = val;
+                                      _selectedProductIds.clear();
+                                    });
                                   }
                                 },
                               ),
@@ -314,7 +351,7 @@ class _BatchAddMasterCategoryDialogState
             ),
             const Divider(height: 1, color: AppColors.border),
 
-            // Barra de Busca no Canto Superior com Contador em Círculo Azul
+            // Barra de Busca no Canto Superior com Contador em Círculo
             Padding(
               padding: const EdgeInsets.all(12),
               child: TextField(
@@ -322,9 +359,11 @@ class _BatchAddMasterCategoryDialogState
                 focusNode: _searchFocusNode,
                 autofocus: true,
                 decoration: InputDecoration(
-                  hintText: 'Pesquise para selecionar itens...',
+                  hintText: isAddMode
+                      ? 'Pesquise itens fora de ${targetCategory.name}...'
+                      : 'Pesquise itens dentro de ${targetCategory.name}...',
                   hintStyle: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted),
-                  prefixIcon: const Icon(Icons.search, color: AppColors.primary, size: 20),
+                  prefixIcon: Icon(Icons.search, color: actionColor, size: 20),
                   suffixIcon: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -340,8 +379,8 @@ class _BatchAddMasterCategoryDialogState
                         Container(
                           margin: const EdgeInsets.only(right: 10),
                           padding: const EdgeInsets.all(6),
-                          decoration: const BoxDecoration(
-                            color: AppColors.primary,
+                          decoration: BoxDecoration(
+                            color: actionColor,
                             shape: BoxShape.circle,
                           ),
                           constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
@@ -367,7 +406,7 @@ class _BatchAddMasterCategoryDialogState
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                    borderSide: BorderSide(color: actionColor, width: 1.5),
                   ),
                 ),
               ),
@@ -399,9 +438,22 @@ class _BatchAddMasterCategoryDialogState
                   }
 
                   final allProducts = snapshot.data ?? [];
-                  final filteredProducts = _searchQuery.isEmpty
+                  // Regra solicitada:
+                  // No + itens, produtos já presentes na categoria mestre NÃO aparecem.
+                  // No - itens, produtos que NÃO estão na categoria mestre NÃO aparecem.
+                  final scopedProducts = isAddMode
                       ? allProducts
+                          .where((p) =>
+                              !p.masterCategories.contains(_selectedMasterCategoryId))
+                          .toList()
                       : allProducts
+                          .where((p) =>
+                              p.masterCategories.contains(_selectedMasterCategoryId))
+                          .toList();
+
+                  final filteredProducts = _searchQuery.isEmpty
+                      ? scopedProducts
+                      : scopedProducts
                           .where((p) => p.matchesSearch(_searchQuery))
                           .toList();
 
@@ -412,7 +464,9 @@ class _BatchAddMasterCategoryDialogState
                         child: Text(
                           _searchQuery.isNotEmpty
                               ? 'Nenhum item encontrado para "$_searchQuery".'
-                              : 'Nenhum produto cadastrado.',
+                              : (isAddMode
+                                  ? 'Todos os itens já pertencem a "${targetCategory.name}".'
+                                  : 'Nenhum item vinculado à categoria "${targetCategory.name}".'),
                           textAlign: TextAlign.center,
                           style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
                         ),
@@ -427,7 +481,6 @@ class _BatchAddMasterCategoryDialogState
                     itemBuilder: (context, index) {
                       final product = filteredProducts[index];
                       final isSelected = _selectedProductIds.contains(product.id);
-                      final alreadyInTarget = product.masterCategories.contains(_selectedMasterCategoryId);
 
                       return InkWell(
                         onTap: () => _onToggleProduct(product),
@@ -435,18 +488,22 @@ class _BatchAddMasterCategoryDialogState
                         child: Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: isSelected ? const Color(0xFFEFF6FF) : Colors.white,
+                            color: isSelected
+                                ? (isAddMode ? const Color(0xFFEFF6FF) : const Color(0xFFFEF2F2))
+                                : Colors.white,
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
-                              color: isSelected ? AppColors.primary : AppColors.border,
+                              color: isSelected ? actionColor : AppColors.border,
                               width: isSelected ? 1.5 : 1,
                             ),
                           ),
                           child: Row(
                             children: [
                               Icon(
-                                isSelected ? Icons.check_circle : Icons.circle_outlined,
-                                color: isSelected ? AppColors.primary : AppColors.textMuted,
+                                isSelected
+                                    ? (isAddMode ? Icons.check_circle : Icons.remove_circle)
+                                    : Icons.circle_outlined,
+                                color: isSelected ? actionColor : AppColors.textMuted,
                                 size: 22,
                               ),
                               const SizedBox(width: 10),
@@ -493,17 +550,6 @@ class _BatchAddMasterCategoryDialogState
                                         ),
                                       ],
                                     ),
-                                    if (alreadyInTarget) ...[
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        '✓ Já presente em ${targetCategory.name}',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w600,
-                                          color: AppColors.stockNormal,
-                                        ),
-                                      ),
-                                    ],
                                   ],
                                 ),
                               ),
@@ -539,6 +585,10 @@ class _BatchAddMasterCategoryDialogState
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: actionColor,
+                      foregroundColor: Colors.white,
+                    ),
                     onPressed: _selectedProductIds.isEmpty || _isSaving ? null : _handleConfirm,
                     child: _isSaving
                         ? const SizedBox(
@@ -546,7 +596,11 @@ class _BatchAddMasterCategoryDialogState
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                           )
-                        : Text('Adicionar à ${targetCategory.name}'),
+                        : Text(
+                            isAddMode
+                                ? 'Adicionar à ${targetCategory.name}'
+                                : 'Remover de ${targetCategory.name}',
+                          ),
                   ),
                 ],
               ),
