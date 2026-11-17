@@ -359,13 +359,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
               label: const Text('Copiar Relatório CSV'),
               onPressed: () {
                 final csvBuffer = StringBuffer();
-                csvBuffer.writeln('Data;Hora;Produto;Codigo_Int;Part_Number;Qtd;Tipo;Origem;Operador');
+                csvBuffer.writeln('Data;Hora;Produto;Codigo_Int;Part_Number;Qtd;Tipo;Origem;Operador;Observacao');
                 for (var m in filteredList) {
                   final dt = DateFormat('dd/MM/yyyy;HH:mm:ss').format(m.createdAt);
                   final isCart = m.type.toUpperCase().startsWith('CART_');
                   final origin = isCart ? 'Carrinho' : 'Ajuste Direto';
+                  final note = (m.notes ?? '').replaceAll(';', ',');
                   csvBuffer.writeln(
-                      '$dt;${m.productName};${m.internalCode ?? ""};${m.manufacturerCode ?? ""};${m.delta};${m.type};$origin;${m.operatorName}');
+                      '$dt;${m.productName};${m.internalCode ?? ""};${m.manufacturerCode ?? ""};${m.delta};${m.type};$origin;${m.operatorName};$note');
                 }
                 Clipboard.setData(ClipboardData(text: csvBuffer.toString()));
                 Navigator.of(ctx).pop();
@@ -922,6 +923,29 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                           ),
                                         ],
                                       ),
+                                      if (m.notes != null && m.notes!.trim().isNotEmpty) ...[
+                                        const SizedBox(height: 3),
+                                        Row(
+                                          children: [
+                                            const Icon(Icons.note_alt_outlined,
+                                                size: 13, color: AppColors.primary),
+                                            const SizedBox(width: 4),
+                                            Expanded(
+                                              child: Text(
+                                                'Obs: ${m.notes!.trim()}',
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 11,
+                                                  fontStyle: FontStyle.italic,
+                                                  color: AppColors.primaryDark,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
                                       Text(
                                         DateFormat('dd/MM/yyyy HH:mm:ss').format(m.createdAt),
                                         style: GoogleFonts.inter(

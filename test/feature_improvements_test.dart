@@ -4,6 +4,7 @@ import 'package:luxpryme_stock/data/models/category_model.dart';
 import 'package:luxpryme_stock/data/models/master_category_model.dart';
 import 'package:luxpryme_stock/data/models/operator_pin_model.dart';
 import 'package:luxpryme_stock/data/models/stock_movement_model.dart';
+import 'package:luxpryme_stock/data/models/cart_item_model.dart';
 import 'package:luxpryme_stock/data/services/inventory_service.dart';
 
 void main() {
@@ -328,6 +329,77 @@ void main() {
       // Eliminar categoria criada anteriormente com PIN Mestre
       await service.deleteMasterCategory(id: 'embalamento_e_expedicao', masterPin: '2026');
       expect(service.masterCategories.any((mc) => mc.id == 'embalamento_e_expedicao'), isFalse);
+    });
+  });
+
+  group('Cart Optional Observation / Notes Tests', () {
+    test('StockMovementModel suporta campo opcional notes na serialização e deserialização', () {
+      final movWithNote = StockMovementModel(
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        productId: '987fcdeb-51a2-43f7-9abc-def012345678',
+        productName: 'Placa Central Farol',
+        categoryNames: ['Eletrônica'],
+        delta: -5,
+        previousQuantity: 50,
+        newQuantity: 45,
+        type: 'CART_WITHDRAWAL',
+        operatorName: 'Tomas Pereyra',
+        notes: 'Lote de produção especial #42',
+        createdAt: DateTime.now(),
+      );
+
+      final map = movWithNote.toMap();
+      expect(map['notes'], equals('Lote de produção especial #42'));
+
+      final restored = StockMovementModel.fromMap(map);
+      expect(restored.notes, equals('Lote de produção especial #42'));
+
+      // Sem nota
+      final movWithoutNote = StockMovementModel(
+        id: '123e4567-e89b-12d3-a456-426614174001',
+        productId: '987fcdeb-51a2-43f7-9abc-def012345678',
+        productName: 'Placa Central Farol',
+        categoryNames: ['Eletrônica'],
+        delta: 2,
+        previousQuantity: 45,
+        newQuantity: 47,
+        type: 'CART_DEPOSIT',
+        operatorName: 'Tomas Pereyra',
+        createdAt: DateTime.now(),
+      );
+
+      expect(movWithoutNote.toMap().containsKey('notes'), isFalse);
+      expect(StockMovementModel.fromMap(movWithoutNote.toMap()).notes, isNull);
+    });
+
+    test('checkoutCart registra observação opcional no histórico de movimentação', () async {
+      final service = InventoryService.instance;
+      service.setMode(localMode: true);
+
+      final products = await service.fetchProducts();
+      final targetProduct = products.first;
+
+      final cartItems = [
+        CartItemModel(
+          product: targetProduct,
+          quantity: 2,
+          isWithdrawal: false, // Reposição de 2 unidades
+        ),
+      ];
+
+      const customNote = 'Entrada emergencial de reposição - OS #99';
+      await service.checkoutCart(
+        cartItems: cartItems,
+        pin: '2026', // PIN Mestre
+        notes: customNote,
+      );
+
+      final movements = await service.fetchMovements();
+      final lastMov = movements.first;
+
+      expect(lastMov.notes, equals(customNote));
+      expect(lastMov.delta, equals(2));
+      expect(lastMov.type, equals('CART_DEPOSIT'));
     });
   });
 }

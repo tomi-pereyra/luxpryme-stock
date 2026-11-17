@@ -1072,6 +1072,7 @@ class InventoryService {
   Future<void> checkoutCart({
     required List<CartItemModel> cartItems,
     required String pin,
+    String? notes,
   }) async {
     if (cartItems.isEmpty) {
       throw Exception('O carrinho de separação está vazio.');
@@ -1121,6 +1122,7 @@ class InventoryService {
         type: item.isWithdrawal ? 'CART_WITHDRAWAL' : 'CART_DEPOSIT',
         operatorName: operatorPin.name,
         pinUsed: '****',
+        notes: (notes != null && notes.trim().isNotEmpty) ? notes.trim() : null,
         createdAt: now,
       );
 
@@ -1256,10 +1258,13 @@ class InventoryService {
         if (res != null) {
           final serverMovement = StockMovementModel.fromMap(res);
           final idx = _localMovements.indexOf(movement);
+          final merged = serverMovement.copyWith(
+            notes: serverMovement.notes ?? movement.notes,
+          );
           if (idx != -1) {
-            _localMovements[idx] = serverMovement;
+            _localMovements[idx] = merged;
           } else {
-            _localMovements.insert(0, serverMovement);
+            _localMovements.insert(0, merged);
           }
           if (!_movementsStreamController.isClosed) {
             _movementsStreamController.add(List.unmodifiable(_localMovements));
@@ -1267,9 +1272,14 @@ class InventoryService {
         }
       } catch (e) {
         debugPrint('Aviso: falha ao gravar stock_movements no Supabase: $e');
-        // Fallback defensivo: se falhar com product_id (por FK ou UUID não existente), tenta sem product_id
+        // Fallback defensivo: se falhar com notes ou product_id (por FK, tipo UUID ou coluna inexistente)
         try {
           final fallbackPayload = movement.toMap(forDatabaseInsert: true);
+          if (e.toString().contains('notes') ||
+              e.toString().contains('42703') ||
+              e.toString().contains('PGRST204')) {
+            fallbackPayload.remove('notes');
+          }
           fallbackPayload['product_id'] = null;
           final res = await _client!
               .from('stock_movements')
@@ -1279,8 +1289,11 @@ class InventoryService {
           if (res != null) {
             final serverMovement = StockMovementModel.fromMap(res);
             final idx = _localMovements.indexOf(movement);
+            final merged = serverMovement.copyWith(
+              notes: serverMovement.notes ?? movement.notes,
+            );
             if (idx != -1) {
-              _localMovements[idx] = serverMovement;
+              _localMovements[idx] = merged;
               if (!_movementsStreamController.isClosed) {
                 _movementsStreamController.add(List.unmodifiable(_localMovements));
               }

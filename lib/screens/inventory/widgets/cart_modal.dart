@@ -13,8 +13,15 @@ class CartModal extends StatefulWidget {
 }
 
 class _CartModalState extends State<CartModal> {
+  final TextEditingController _notesController = TextEditingController();
   bool _isProcessing = false;
   String? _errorMessage;
+
+  @override
+  void dispose() {
+    _notesController.dispose();
+    super.dispose();
+  }
 
   Future<void> _requestPinAndCheckout() async {
     final pinController = TextEditingController();
@@ -115,9 +122,11 @@ class _CartModalState extends State<CartModal> {
     });
 
     try {
+      final noteText = _notesController.text.trim();
       await InventoryService.instance.checkoutCart(
         cartItems: CartService.instance.items,
         pin: pinConfirmed,
+        notes: noteText.isNotEmpty ? noteText : null,
       );
 
       final totalItems = CartService.instance.itemCount;
@@ -371,6 +380,39 @@ class _CartModalState extends State<CartModal> {
                     ),
                   ),
                   const SizedBox(height: 8),
+                ],
+
+                if (items.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    child: TextField(
+                      controller: _notesController,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(Icons.note_alt_outlined, color: AppColors.primary, size: 20),
+                        labelText: 'Observação / Motivo (Opcional)',
+                        hintText: 'Ex: Lote 42, Produção Placa X, Manutenção, OS 108...',
+                        labelStyle: GoogleFonts.inter(fontSize: 12),
+                        hintStyle: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+                        filled: true,
+                        fillColor: AppColors.background,
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: AppColors.border),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: AppColors.border),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
 
                 // Footer

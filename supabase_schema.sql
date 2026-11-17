@@ -103,10 +103,12 @@ CREATE TABLE IF NOT EXISTS public.stock_movements (
     type TEXT NOT NULL,
     operator_name TEXT NOT NULL,
     pin_used TEXT,
+    notes TEXT,
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 ALTER TABLE public.stock_movements ADD COLUMN IF NOT EXISTS master_categories TEXT[] DEFAULT ARRAY[]::TEXT[];
+ALTER TABLE public.stock_movements ADD COLUMN IF NOT EXISTS notes TEXT;
 
 -- 5. Função e Trigger para atualizar updated_at
 CREATE OR REPLACE FUNCTION public.handle_updated_at()

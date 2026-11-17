@@ -16,6 +16,7 @@ class StockMovementModel {
   final String type; // 'UNIT_QUICK', 'CART_WITHDRAWAL', 'CART_DEPOSIT', 'MANUAL_EDIT'
   final String operatorName;
   final String? pinUsed;
+  final String? notes;
   final DateTime createdAt;
 
   const StockMovementModel({
@@ -32,6 +33,7 @@ class StockMovementModel {
     required this.type,
     required this.operatorName,
     this.pinUsed,
+    this.notes,
     required this.createdAt,
   });
 
@@ -60,6 +62,7 @@ class StockMovementModel {
       type: map['type']?.toString() ?? 'UNIT_QUICK',
       operatorName: map['operator_name']?.toString() ?? 'Operador',
       pinUsed: map['pin_used']?.toString(),
+      notes: map['notes']?.toString(),
       createdAt: map['created_at'] != null
           ? DateTime.tryParse(map['created_at'].toString())?.toLocal() ?? DateTime.now()
           : DateTime.now(),
@@ -82,6 +85,7 @@ class StockMovementModel {
       'type': type,
       'operator_name': operatorName,
       if (pinUsed != null && pinUsed!.isNotEmpty) 'pin_used': pinUsed,
+      if (notes != null && notes!.trim().isNotEmpty) 'notes': notes!.trim(),
       'created_at': createdAt.toIso8601String(),
     };
 
@@ -99,5 +103,41 @@ class StockMovementModel {
     }
 
     return map;
+  }
+
+  StockMovementModel copyWith({
+    String? id,
+    String? productId,
+    String? productName,
+    String? productCode,
+    String? internalCode,
+    String? manufacturerCode,
+    List<String>? categoryNames,
+    int? delta,
+    int? previousQuantity,
+    int? newQuantity,
+    String? type,
+    String? operatorName,
+    String? pinUsed,
+    String? notes,
+    DateTime? createdAt,
+  }) {
+    return StockMovementModel(
+      id: id ?? this.id,
+      productId: productId ?? this.productId,
+      productName: productName ?? this.productName,
+      productCode: productCode ?? this.productCode,
+      internalCode: internalCode ?? this.internalCode,
+      manufacturerCode: manufacturerCode ?? this.manufacturerCode,
+      categoryNames: categoryNames ?? this.categoryNames,
+      delta: delta ?? this.delta,
+      previousQuantity: previousQuantity ?? this.previousQuantity,
+      newQuantity: newQuantity ?? this.newQuantity,
+      type: type ?? this.type,
+      operatorName: operatorName ?? this.operatorName,
+      pinUsed: pinUsed ?? this.pinUsed,
+      notes: notes ?? this.notes,
+      createdAt: createdAt ?? this.createdAt,
+    );
   }
 }
