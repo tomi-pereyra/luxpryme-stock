@@ -1,129 +1,132 @@
-# 🔷 Estoque Luxpryme
+<div align="center">
+  <img src="assets/icon/app_icon.png" width="128" height="128" alt="Logo Estoque Luxpryme" style="border-radius: 24px;" />
+  <h1>Estoque Luxpryme</h1>
+  <p><strong>Sistema Industrial de Controle de Almoxarifado e Estoque de Alta Precisão</strong></p>
+  <p>
+    <b>Versão 1.2.0</b> • <b>Offline-First (0ms)</b> • <b>Setores Industriais</b> • <b>Rastreabilidade por PIN</b>
+  </p>
+  <p>
+    Desenvolvido e Administrado por <b>Tomas Pereyra</b> para <b>Luxpryme Indústria Eletrônica</b>
+  </p>
 
-Aplicativo de **Controle de Estoque Industrial** minimalista, robusto e com **sincronização em tempo real**, desenvolvido sob medida para a **Luxpryme** no setor de indústria e manufatura eletrônica.
-
-Disponível para **Android (.apk)** e **Windows (.exe)**.
-
----
-
-## 🎨 Identidade Visual
-* **Logotipo:** Letra **"L"** estilizada em Azul Médio (`#1976D2`) sobre fundo branco puro.
-* **Tema:** Material 3 industrial com tipografia moderna (Inter / Roboto Mono para Part Numbers).
-* **Feedback de Estoque:** Badges e contadores dinâmicos (Verde = Normal, Âmbar = Estoque Baixo, Vermelho = Esgotado).
-
----
-
-## 🏷️ Categorias Especializadas da Indústria Eletrônica
-1. **Componentes SMD** (Resistores, Capacitores, Diodos, CIs de montagem superficial)
-2. **Componentes PTH** (Conectores, Bornes, Capacitores Eletrolíticos, Terminais passantes)
-3. **Baterias Industriais** (VRLA Chumbo-Ácido, Packs Li-Ion 18650, NiMH, moedas CR2032)
-4. **Placas de Circuito Impresso (PCBs)** (Circuitos impressos / PCIs virgens sem montagem)
-5. **Placas com Componentes SMD** (Montadas após processo pick-and-place e forno de refusão)
-6. **Placas com Componentes PTH** (Montagem manual, cadinho de onda e kits)
-7. **Placas Eletrônicas Testadas** (Gravadas, montadas completas e testadas funcionalmente)
-8. **Insumos de Solda e Químicos** (Barras de estanho 63/37, fluxos spray e pastas de solda)
-* *Suporte a múltiplas categorias por produto, permitindo filtros cruzados e categorização avançada.*
+  <p>
+    <img src="https://img.shields.io/badge/Plataformas-Windows%20%7C%20Android-blue?style=flat-square" alt="Plataformas" />
+    <img src="https://img.shields.io/badge/Flutter-3.47+-02569B?style=flat-square&logo=flutter&logoColor=white" alt="Flutter" />
+    <img src="https://img.shields.io/badge/Backend-Supabase%20Cloud-3ECF8E?style=flat-square&logo=supabase&logoColor=white" alt="Supabase" />
+    <img src="https://img.shields.io/badge/Licen%C3%A7a-Propriet%C3%A1ria-red?style=flat-square" alt="Licença" />
+  </p>
+</div>
 
 ---
 
-## ⚙️ Principais Funcionalidades
-* **Ajuste Rápido Instantâneo (±1):** Permite incrementar ou decrementar uma unidade diretamente no card do produto de forma rápida e instantânea, sem necessidade de senha ou confirmação.
-* **Carrinho de Separação de Múltiplos Itens:** Para retiradas ou adições em lote de diversos componentes, os itens são colocados no carrinho com suas respectivas quantidades e finalizados conjuntamente mediante confirmação de um **PIN de 4 dígitos**.
-* **Painel Administrativo (Exclusivo Windows):** Tela restrita na versão desktop para cadastrar, ativar, desativar e gerenciar os PINs autorizados dos operadores de fábrica.
-* **Busca Inteligente Multi-Critério:** Localização em tempo real por **Nome do Produto**, **Código Interno** ou **Part Number do Fabricante**.
-* **Histórico e Relatórios de Movimentação:** Histórico completo com filtros por categoria, período e quantidade, além de exportação de relatório detalhado em **CSV**.
+## 🎨 Identidade Visual Corporativa
+
+O **Estoque Luxpryme** adota uma identidade visual sóbria, funcional e moderna, desenhada especificamente para ambientes industriais, galpões fabris e laboratórios eletrônicos:
+
+* **Símbolo Oficial:** Quadrado com cantos arredondados em **Azul Luxpryme** (`#1976D2`) destacando a letra **"L"** em **branco puro** com proporção geométrica harmoniosa e excelente legibilidade.
+* **Paleta de Cores Setorial:**
+  * 🔵 **Azul Luxpryme (`#1976D2`):** Setor de Laboratório Eletrônico (SMD, PTH, PCBs, ICs) e cor mestra do sistema.
+  * 🟢 **Verde Produção (`#16A34A`):** Setor de Produção Industrial (montagem mecânica, chicotes, baterias e luminárias).
+  * ⚪ **Cinza Slate (`#64748B`):** Setor Outros (almoxarifado geral, manutenção fabril, civil e insumos de apoio).
+  * 🟣 **Cores Customizadas:** Novos setores criados pela supervisão podem receber cores exclusivas (ex: Roxo para *Embalamento*, Laranja para *Preparação*).
+* **Feedback de Estoque:**
+  * 🟢 **Verde (`#16A34A`):** Estoque Saudável / Normal.
+  * 🟡 **Âmbar (`#D97706`):** Estoque Baixo (próximo ao ponto de pedido).
+  * 🔴 **Vermelho (`#DC2626`):** Estoque Esgotado / Alerta de Saldo Negativo.
+* **Tipografia:** Família *Inter* para interface de alta densidade e *Montserrat* no símbolo corporativo.
 
 ---
 
-## ⚡ Stack Tecnológica (100% Gratuita)
-* **Frontend:** Flutter 3.47+ / Dart 3 com suporte a Android e Desktop Windows.
-* **Backend & Database:** [Supabase](https://supabase.com) (Plano Free Tier vitalício).
-  * **Banco:** PostgreSQL com integridade referencial e validação `CHECK (quantity >= 0)`.
-  * **Realtime:** WebSockets nativos via PostgreSQL Replication.
-  * **Autenticação Fechada:** Supabase Auth (E-mail e Senha) com registro público desabilitado.
+## 🏭 Arquitetura por Setores da Fábrica
 
----
+Para suportar grandes volumes e evitar interferências entre áreas produtivas, o estoque é estruturado em **Setores**:
 
-## 🚀 Como Iniciar o Projeto do Zero
-
-### 1. Criar o Projeto Gratuito no Supabase
-1. Acesse [supabase.com](https://supabase.com) e crie uma conta gratuita (não requer cartão de crédito).
-2. Clique em **"New Project"**, defina o nome (ex: `luxpryme-stock`), uma senha forte para o banco de dados e a região mais próxima (ex: *São Paulo - sa-east-1*).
-3. No menu lateral esquerdo, vá em **SQL Editor**.
-4. Abra o arquivo [`supabase_schema.sql`](./supabase_schema.sql) deste projeto, copie todo o seu conteúdo, cole no SQL Editor do Supabase e clique em **"Run"**.
-   * *O script criará a estrutura das tabelas, triggers, políticas de segurança RLS e publicação Realtime.*
-5. O cadastro e sincronização dos produtos pode ser realizado diretamente através da interface do aplicativo ou via inserção no banco de dados.
-
-> 💡 **Nota:** O aplicativo permite cadastrar e gerenciar produtos, registrar movimentações e simular separações tanto no Android quanto no Windows.
-
-### 2. Cadastrar Usuários Manualmente (Acesso Restrito)
-Como o app possui política de acesso fechada (sem auto-cadastro público):
-1. No painel do Supabase, clique em **Authentication** > **Users**.
-2. Clique no botão **"Add user"** > **"Create user"**.
-3. Preencha o e-mail do operador/gestor (ex: `operador@luxpryme.com`) e a senha de acesso.
-4. Marque a opção **"Auto Confirm User"** para que a conta já fique ativa sem depender de e-mail de confirmação.
-5. Em **Authentication** > **Providers** > **Email**, você pode desmarcar a opção *"Enable Signups"* para garantir que ninguém consiga se cadastrar por conta própria.
-
-### 3. Conectar o App ao Supabase
-Você tem duas opções fáceis:
-* **Opção A (Recomendada no Código):** Abra [`lib/core/constants/app_constants.dart`](./lib/core/constants/app_constants.dart) e preencha:
-  ```dart
-  static const String defaultSupabaseUrl = 'https://SEU_PROJETO.supabase.co';
-  static const String defaultSupabaseAnonKey = 'SUA_CHAVE_PUBLICA_ANON';
-  ```
-  *(Esses valores são obtidos no Supabase em **Project Settings** > **API**)*.
-* **Opção B (Pela Interface do App):** Ao abrir o app pela primeira vez sem configurar o código, uma tela moderna de boas-vindas solicitará a URL e a Anon Key.
-
----
-
-## 📱 Executando em Desenvolvimento
-```bash
-# Baixar dependências
-flutter pub get
-
-# Executar no emulador/dispositivo Android ou no Windows
-flutter run
+```mermaid
+flowchart TD
+    A["PIN Mestre (Supervisor Geral)"] --> B["Acesso a Todos os Setores"]
+    A --> C["Gestão de Setores Dinâmicos"]
+    A --> D["Gestão em Lote (+ Itens / - Itens)"]
+    A --> E["Resolução de Conflitos de Saldo Negativo"]
+    
+    F["PIN Setorial de Eletrônica"] --> G["Movimenta apenas itens de Eletrônica"]
+    H["PIN Setorial de Produção"] --> I["Movimenta apenas itens de Produção"]
+    J["PIN Setorial Customizado"] --> K["Movimenta apenas itens do seu Setor"]
 ```
 
+* **Multi-Vínculo:** Um produto pode pertencer a mais de um setor simultaneamente (ex: um chicote ou bateria usado tanto no laboratório eletrônico quanto na linha de montagem final).
+* **Setores Dinâmicos:** Novos setores industriais (ex: *Preparação de Fios*, *Embalamento*, *Expedição*) podem ser criados a qualquer momento pelo supervisor com PIN Mestre diretamente pelo app.
+
 ---
 
-## 📦 Como Exportar os Arquivos (.apk e .exe)
+## 🚀 Principais Recursos da Versão 1.2.0
 
-### 🤖 1. Gerando o APK para Android (.apk)
-Para gerar o arquivo de instalação instalável em qualquer smartphone ou tablet Android:
+### 1. Tecnologia 100% Offline-First (Inicialização em 0ms)
+* **Baixa Única em Disco:** O catálogo completo (> 5.420 produtos) é gravado no armazenamento local do aparelho.
+* **Abertura Imediata:** Ao reabrir o aplicativo, não há telas de carregamento — o estoque abre instantaneamente em **0 milissegundos**, pronto para consulta e movimentação mesmo sem sinal de Wi-Fi ou em modo avião.
+* **Sincronização Silenciosa em Segundo Plano:** Movimentações realizadas offline são enfileiradas e enviadas para a nuvem automaticamente assim que houver conexão com a internet.
 
+### 2. Detecção e Resolução de Conflitos de Estoque
+* Se dois operadores retirarem peças do mesmo componente em aparelhos desconectados e o saldo resultante ficar negativo ao sincronizar, o sistema emite um alerta destacado com 4 opções de regularização:
+  1. **Zerar Saldo (0 un)** com registro de auditoria.
+  2. **Digitar Saldo Real** contado fisicamente na prateleira/gaveteiro.
+  3. **Estornar Déficit** devolvendo as peças ao ponto de equilíbrio.
+  4. **Dispensar Notificação**.
+
+### 3. Gestão em Lote de Setores (`+ Itens` e `- Itens`)
+* **`+ Itens`:** Ferramenta com busca inteligente e contador dinâmico (círculo azul) para adicionar múltiplos produtos a um setor. A busca limpa automaticamente a cada seleção para agilizar o fluxo contínuo.
+* **`- Itens`:** Filtra apenas os itens do setor para desvincular em lote com segurança.
+
+### 4. Carrinho de Separação com Observação Técnica
+* Separação de kits de componentes para ordens de produção ou entrada de notas de fornecedores.
+* Suporta **anotação opcional** direta no carrinho (ex: *"OS #840 - Linha 2 de Luminárias"*).
+* Baixa conjunta protegida por autenticação de **PIN de 4 dígitos**.
+
+### 5. Busca Multi-Termo Desordenada
+* Localiza qualquer produto mesmo se as palavras forem digitadas fora de ordem (ex: `farol placa 16` encontra `MONTAGEM PLACA ELETRONICA FAROL 16 LEDS`).
+* Busca instantânea por Código Interno e Part Number do Fabricante.
+
+### 6. Interface Adaptativa (Mobile vs Desktop)
+* **Mobile (Android):** Menu superior limpo com busca expansível via lupa, barra de setores compacta, acesso às famílias técnicas via toque longo no chip do setor e menu circular de ações flutuante no canto inferior direito.
+* **Desktop (Windows):** Barra de busca ampla centralizada, atalhos de administração no cabeçalho e menu de ferramentas rápidas.
+
+---
+
+## 💻 Stack Tecnológica
+
+| Camada | Tecnologia | Detalhes |
+| :--- | :--- | :--- |
+| **Frontend** | Flutter 3.47+ / Dart 3 | Suporte nativo multiplataforma (Windows Desktop e Android) |
+| **Banco de Dados Cloud** | Supabase (PostgreSQL) | Regras RLS, triggers de integridade e publicação Realtime |
+| **Cache Local** | LocalCacheService (Disco) | Armazenamento JSON local persistente e fila offline |
+| **Tipografia** | Google Fonts (Inter / Montserrat) | Ergonomia visual de alta densidade de dados |
+
+---
+
+## 📦 Como Compilar e Exportar
+
+### 🤖 Gerar APK para Android
 ```bash
 flutter build apk --release
 ```
-* O arquivo final será gerado em:
+* O arquivo final gerado estará em:
   `build/app/outputs/flutter-apk/app-release.apk`
-* Para gerar APKs separados por arquitetura (gerando arquivos menores e mais rápidos):
-  ```bash
-  flutter build apk --split-per-abi
-  ```
 
-> **Dica:** Se o `flutter doctor` indicar licenças pendentes do Android SDK na sua máquina, rode uma única vez:
-> `flutter doctor --android-licenses` e pressione `y` para aceitá-las.
-
----
-
-### 💻 2. Gerando o Executável para Windows (.exe)
-Para compilar a aplicação nativa para computadores com Windows 10/11:
-
-1. Certifique-se de ter o pacote **"Desenvolvimento para desktop com C++"** instalado através do [Visual Studio Community](https://visualstudio.microsoft.com/vs/community/) (gratuito).
-2. Execute o comando:
+### 💻 Gerar Executável para Windows
 ```bash
 flutter build windows --release
 ```
-* O executável e todas as DLLs necessárias serão gerados na pasta:
-  `build/windows/x64/runner/Release/`
-* O arquivo principal será:
+* O executável nativo e as DLLs estarão em:
   `build/windows/x64/runner/Release/luxpryme_stock.exe`
-
-Para distribuir para outros computadores, basta compactar (ZIP) o conteúdo da pasta `Release` ou criar um instalador com ferramentas como Inno Setup.
 
 ---
 
-## 🛡️ Regras de Negócio e Integridade
-* **Proteção contra Estoque Negativo:** O app valida tanto na interface do usuário (desabilitando botões e conferindo inputs) quanto no próprio banco de dados PostgreSQL com a constraint `CHECK (quantity >= 0)`.
-* **Sincronização Instantânea:** Quando um operador adiciona ou retira itens no chão de fábrica pelo Android, o estoque na tela do computador do gestor no Windows é atualizado no mesmo segundo via WebSockets.
+## 👥 Autoria e Administração
+
+* **Desenvolvedor e Administrador Geral:** Tomas Pereyra (`tomibr20@gmail.com`)
+* **Empresa:** Luxpryme Indústria Eletrônica
+
+---
+
+## 📄 Licença
+
+Este software é distribuído sob licença **Proprietária e Confidencial**. Todos os direitos reservados à **Tomas Pereyra** e **Luxpryme Indústria Eletrônica**. Consulte o arquivo [LICENSE](./LICENSE) para obter detalhes completos sobre os termos de uso.
