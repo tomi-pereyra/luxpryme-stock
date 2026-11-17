@@ -113,7 +113,7 @@ class _BatchAddMasterCategoryDialogState
     );
 
     final actionLabel = isAddMode ? 'adicionar' : 'remover';
-    final preposition = isAddMode ? 'à categoria mestre' : 'da categoria mestre';
+    final preposition = isAddMode ? 'ao setor' : 'do setor';
 
     final pinController = TextEditingController();
     String? pinError;
@@ -241,8 +241,8 @@ class _BatchAddMasterCategoryDialogState
             backgroundColor: isAddMode ? AppColors.stockNormal : AppColors.primary,
             content: Text(
               isAddMode
-                  ? 'Sucesso! ${_selectedProductIds.length} produto(s) adicionado(s) à categoria "${targetCategory.name}".'
-                  : 'Sucesso! ${_selectedProductIds.length} produto(s) removido(s) da categoria "${targetCategory.name}".',
+                  ? 'Sucesso! ${_selectedProductIds.length} produto(s) adicionado(s) ao setor "${targetCategory.name}".'
+                  : 'Sucesso! ${_selectedProductIds.length} produto(s) removido(s) do setor "${targetCategory.name}".',
               style: GoogleFonts.inter(fontWeight: FontWeight.w600),
             ),
           ),
@@ -303,13 +303,13 @@ class _BatchAddMasterCategoryDialogState
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          isAddMode ? '+ Itens na Categoria' : '- Itens da Categoria',
+                          isAddMode ? '+ Itens no Setor' : '- Itens do Setor',
                           style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700),
                         ),
                         Row(
                           children: [
                             Text(
-                              isAddMode ? 'Adicionar à: ' : 'Remover de: ',
+                              isAddMode ? 'Adicionar ao: ' : 'Remover do: ',
                               style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
                             ),
                             DropdownButtonHideUnderline(
@@ -465,8 +465,8 @@ class _BatchAddMasterCategoryDialogState
                           _searchQuery.isNotEmpty
                               ? 'Nenhum item encontrado para "$_searchQuery".'
                               : (isAddMode
-                                  ? 'Todos os itens já pertencem a "${targetCategory.name}".'
-                                  : 'Nenhum item vinculado à categoria "${targetCategory.name}".'),
+                                  ? 'Todos os itens já pertencem ao setor "${targetCategory.name}".'
+                                  : 'Nenhum item vinculado ao setor "${targetCategory.name}".'),
                           textAlign: TextAlign.center,
                           style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
                         ),
@@ -598,8 +598,8 @@ class _BatchAddMasterCategoryDialogState
                           )
                         : Text(
                             isAddMode
-                                ? 'Adicionar à ${targetCategory.name}'
-                                : 'Remover de ${targetCategory.name}',
+                                ? 'Adicionar ao Setor ${targetCategory.name}'
+                                : 'Remover do Setor ${targetCategory.name}',
                           ),
                   ),
                 ],

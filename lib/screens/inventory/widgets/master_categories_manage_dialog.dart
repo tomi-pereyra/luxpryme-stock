@@ -84,7 +84,7 @@ class _MasterCategoriesManageDialogState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Nova Categoria Mestre',
+                        'Novo Setor da Fábrica',
                         style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 18),
                       ),
                       Text(
@@ -125,12 +125,12 @@ class _MasterCategoriesManageDialogState
                     ),
                   ],
 
-                  // Nome da Categoria Mestre
+                  // Nome do Setor
                   TextField(
                     controller: nameController,
                     autofocus: true,
                     decoration: const InputDecoration(
-                      labelText: 'Nome da Categoria Mestre *',
+                      labelText: 'Nome do Setor *',
                       hintText: 'Ex: Preparação, Embalamento, etc.',
                       prefixIcon: Icon(Icons.label_outline),
                     ),
@@ -274,13 +274,13 @@ class _MasterCategoriesManageDialogState
               ),
               ElevatedButton.icon(
                 icon: const Icon(Icons.check, size: 18),
-                label: const Text('Salvar Categoria Mestre'),
+                label: const Text('Salvar Setor'),
                 onPressed: () async {
                   final name = nameController.text.trim();
                   final pin = pinController.text.trim();
 
                   if (name.isEmpty) {
-                    setDialogState(() => errorText = 'Informe o nome da categoria mestre.');
+                    setDialogState(() => errorText = 'Informe o nome do setor.');
                     return;
                   }
                   if (pin.length != 4) {
@@ -300,7 +300,7 @@ class _MasterCategoriesManageDialogState
                     messenger.showSnackBar(
                       SnackBar(
                         backgroundColor: AppColors.stockNormal,
-                        content: Text('Categoria mestre "$name" criada com sucesso!'),
+                        content: Text('Setor "$name" criado com sucesso!'),
                       ),
                     );
                   } catch (e) {
@@ -348,7 +348,7 @@ class _MasterCategoriesManageDialogState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Modificar Categoria Mestre',
+                        'Modificar Setor',
                         style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 18),
                       ),
                       Text(
@@ -389,11 +389,11 @@ class _MasterCategoriesManageDialogState
                     ),
                   ],
 
-                  // Nome da Categoria Mestre
+                  // Nome do Setor
                   TextField(
                     controller: nameController,
                     decoration: const InputDecoration(
-                      labelText: 'Nome da Categoria Mestre *',
+                      labelText: 'Nome do Setor *',
                       prefixIcon: Icon(Icons.label_outline),
                     ),
                   ),
@@ -562,7 +562,7 @@ class _MasterCategoriesManageDialogState
                     messenger.showSnackBar(
                       SnackBar(
                         backgroundColor: AppColors.stockNormal,
-                        content: Text('Categoria mestre "$name" atualizada com sucesso!'),
+                        content: Text('Setor "$name" atualizado com sucesso!'),
                       ),
                     );
                   } catch (e) {
@@ -585,14 +585,14 @@ class _MasterCategoriesManageDialogState
   ) async {
     final pin = await PinConfirmationDialog.show(
       context,
-      title: 'Eliminar Categoria Mestre',
+      title: 'Eliminar Setor',
       subtitle: productCount > 0
-          ? 'ATENÇÃO: Existem $productCount produto(s) nesta categoria mestre.\n'
-              'Ao excluir, esses produtos serão mantidos e transferidos automaticamente para a categoria "Outros".\n'
+          ? 'ATENÇÃO: Existem $productCount produto(s) neste setor.\n'
+              'Ao excluir, esses produtos serão mantidos e transferidos automaticamente para o setor "Outros".\n'
               'Digite seu PIN Mestre para confirmar:'
-          : 'Para eliminar a categoria mestre "${category.name}", digite seu PIN Mestre:',
+          : 'Para eliminar o setor "${category.name}", digite seu PIN Mestre:',
       itemName: category.name,
-      actionLabel: 'Excluir Categoria Mestre',
+      actionLabel: 'Excluir Setor',
       actionColor: AppColors.stockZero,
       actionIcon: Icons.delete_forever,
     );
@@ -608,7 +608,7 @@ class _MasterCategoriesManageDialogState
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: AppColors.stockNormal,
-            content: Text('Categoria mestre "${category.name}" eliminada com sucesso.'),
+            content: Text('Setor "${category.name}" eliminado com sucesso.'),
           ),
         );
       }
@@ -655,7 +655,7 @@ class _MasterCategoriesManageDialogState
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Categorias Mestres Industriais',
+                            'Setores da Fábrica',
                             style: GoogleFonts.inter(
                               fontSize: 18,
                               fontWeight: FontWeight.w700,
@@ -695,7 +695,7 @@ class _MasterCategoriesManageDialogState
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Apenas operadores com PIN Mestre (ex: Supervisor Geral) possuem autorização para adicionar, modificar ou excluir categorias mestres.',
+                        'Apenas operadores com PIN Mestre (ex: Supervisor Geral) possuem autorização para adicionar, modificar ou excluir setores.',
                         style: GoogleFonts.inter(
                           fontSize: 12,
                           color: AppColors.primaryDark,
@@ -843,14 +843,14 @@ class _MasterCategoriesManageDialogState
                                     children: [
                                       IconButton(
                                         icon: const Icon(Icons.edit_outlined, size: 20),
-                                        tooltip: 'Modificar Categoria Mestre (Requer PIN Mestre)',
+                                        tooltip: 'Modificar Setor (Requer PIN Mestre)',
                                         onPressed: () => _openEditMasterCategoryDialog(mc),
                                       ),
                                       if (!isOutros) ...[
                                         IconButton(
                                           icon: const Icon(Icons.delete_outline,
                                               size: 20, color: AppColors.stockZero),
-                                          tooltip: 'Eliminar Categoria Mestre (Requer PIN Mestre)',
+                                          tooltip: 'Eliminar Setor (Requer PIN Mestre)',
                                           onPressed: () =>
                                               _handleDeleteMasterCategory(mc, count),
                                         ),
@@ -887,7 +887,7 @@ class _MasterCategoriesManageDialogState
                     ),
                     icon: const Icon(Icons.add, size: 20),
                     label: Text(
-                      'Nova Categoria Mestre',
+                      'Novo Setor',
                       style: GoogleFonts.inter(fontWeight: FontWeight.w700),
                     ),
                     onPressed: _openAddMasterCategoryDialog,

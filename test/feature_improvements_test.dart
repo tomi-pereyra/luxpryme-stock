@@ -324,7 +324,7 @@ void main() {
         throwsA(isA<Exception>().having(
           (e) => e.toString(),
           'message',
-          contains('é padrão do sistema e não pode ser excluída'),
+          contains('é padrão do sistema e não pode ser excluído'),
         )),
       );
 
@@ -409,6 +409,22 @@ void main() {
     test('bulkAddProductsToMasterCategory adiciona múltiplos produtos à categoria mestre com PIN Mestre', () async {
       final service = InventoryService.instance;
       service.setMode(localMode: true);
+
+      // Garante produtos de teste disponíveis
+      await service.createProduct(ProductModel(
+        id: 'prod_batch_test_1',
+        name: 'Item Teste Batch 1',
+        categoryIds: ['cat_1'],
+        masterCategories: ['eletronica'],
+        quantity: 10,
+      ));
+      await service.createProduct(ProductModel(
+        id: 'prod_batch_test_2',
+        name: 'Item Teste Batch 2',
+        categoryIds: ['cat_1'],
+        masterCategories: ['eletronica'],
+        quantity: 10,
+      ));
 
       final products = await service.fetchProducts();
       final p1 = products[0];

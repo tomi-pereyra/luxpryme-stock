@@ -320,7 +320,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Categorias Mestres Industriais',
+                              'Setores da Fábrica',
                               style: GoogleFonts.inter(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
@@ -329,7 +329,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Adicione, edite ou remova categorias mestres (ex: Preparação, Embalamento) com validação de PIN Mestre.',
+                              'Adicione, edite ou remova setores da fábrica (ex: Preparação, Embalamento) com validação de PIN Mestre.',
                               style: GoogleFonts.inter(
                                 fontSize: 13,
                                 color: AppColors.textSecondary,
@@ -345,7 +345,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                         ),
                         icon: const Icon(Icons.tune, size: 18),
                         label: Text(
-                          'Gerenciar Categorias Mestres',
+                          'Gerenciar Setores',
                           style: GoogleFonts.inter(fontWeight: FontWeight.w700),
                         ),
                         onPressed: () => MasterCategoriesManageDialog.show(context),
@@ -395,7 +395,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                               decoration: const InputDecoration(
                                 labelText: 'PIN (4 dígitos)',
-                                hintText: 'Ex: 2026',
+                                hintText: 'Ex: 4 dígitos',
                                 counterText: '',
                                 prefixIcon: Icon(Icons.pin_outlined),
                               ),
@@ -407,7 +407,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       Row(
                         children: [
                           Text(
-                            'Autorização por Categoria Mestre:',
+                            'Autorização por Setor:',
                             style: GoogleFonts.inter(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
@@ -427,7 +427,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                                   children: [
                                     ChoiceChip(
                                       avatar: const Icon(Icons.stars, size: 16, color: Color(0xFF7C3AED)),
-                                      label: const Text('Mestre (Todas as Categorias)'),
+                                      label: const Text('Mestre (Acesso a Todos os Setores)'),
                                       selected: _selectedMasterCategory == 'todas',
                                       selectedColor: const Color(0xFFEDE9FE),
                                       onSelected: (val) {

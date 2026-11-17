@@ -163,7 +163,7 @@ class _CategoriesManageDialogState extends State<CategoriesManageDialog> {
                   ),
                   icon: const Icon(Icons.dashboard_customize_outlined, size: 15),
                   label: Text(
-                    'Gerenciar Categorias Mestres',
+                    'Gerenciar Setores',
                     style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600),
                   ),
                   onPressed: () {

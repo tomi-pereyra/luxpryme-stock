@@ -187,7 +187,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             title: Text(
-              'Gerenciar Categorias Mestres',
+              'Gerenciar Setores',
               style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 18),
             ),
             content: SingleChildScrollView(
@@ -208,7 +208,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   ],
                   const SizedBox(height: 16),
                   Text(
-                    'Selecione as categorias mestres para este produto:',
+                    'Selecione os setores para este produto:',
                     style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
                   ),
                   const SizedBox(height: 12),
@@ -266,7 +266,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               backgroundColor: AppColors.stockNormal,
-              content: Text('Categoria mestre de "${product.name}" atualizada com sucesso!'),
+              content: Text('Setor de "${product.name}" atualizado com sucesso!'),
             ),
           );
         }
@@ -493,7 +493,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'Categorias Comuns de "$masterCatName"',
+                          'Categorias do Setor "$masterCatName"',
                           style: GoogleFonts.inter(
                               fontSize: 16, fontWeight: FontWeight.w700),
                         ),
@@ -504,7 +504,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
                   child: Text(
-                    'Selecione uma categoria comum para filtrar:',
+                    'Selecione uma categoria para filtrar:',
                     style: GoogleFonts.inter(
                         fontSize: 12, color: AppColors.textSecondary),
                   ),
@@ -517,7 +517,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         : Icons.radio_button_off,
                     color: AppColors.primary,
                   ),
-                  title: const Text('Todos os itens desta categoria mestre'),
+                  title: const Text('Todos os itens deste setor'),
                   onTap: () {
                     setState(() {
                       _selectedCategoryId = null;
@@ -679,7 +679,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         fontWeight: FontWeight.w700, fontSize: 14),
                   ),
                   subtitle: Text(
-                    'Buscar e adicionar múltiplos produtos à categoria mestre',
+                    'Buscar e adicionar múltiplos produtos ao setor',
                     style: GoogleFonts.inter(
                         fontSize: 12, color: AppColors.textSecondary),
                   ),
@@ -711,7 +711,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.stockZero),
                   ),
                   subtitle: Text(
-                    'Buscar e desvincular produtos de uma categoria mestre',
+                    'Buscar e desvincular produtos de um setor',
                     style: GoogleFonts.inter(
                         fontSize: 12, color: AppColors.textSecondary),
                   ),

@@ -400,9 +400,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                       ),
                       const SizedBox(height: 18),
 
-                      // Categorias Mestres
+                      // Setor / Setores
                       Text(
-                        'Categoria Mestre (Pode marcar mais de uma) *',
+                        'Setor (Pode marcar mais de um) *',
                         style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 8),

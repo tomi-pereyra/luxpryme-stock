@@ -262,7 +262,7 @@ class ProductCard extends StatelessWidget {
                           children: [
                             Icon(Icons.drive_file_move_outlined, size: 18, color: Color(0xFF2563EB)),
                             SizedBox(width: 8),
-                            Text('Mover Categoria Mestre'),
+                            Text('Mover Setor'),
                           ],
                         ),
                       ),

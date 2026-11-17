@@ -22,7 +22,7 @@ class OperatorPinModel {
   String get masterCategoryLabel {
     switch (masterCategory.toLowerCase()) {
       case 'todas':
-        return 'Mestre (Todas as Categorias)';
+        return 'Mestre (Todos os Setores)';
       case 'eletronica':
         return 'Eletrônica';
       case 'producao':

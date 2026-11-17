@@ -520,18 +520,18 @@ class InventoryService {
     if (!operator.isMasterPin) {
       throw Exception(
         'Acesso negado: O PIN informado pertence a "${operator.name}". '
-        'Apenas operadores com PIN Mestre (ex: Supervisor Geral) têm autorização para adicionar categorias mestres.',
+        'Apenas operadores com PIN Mestre (ex: Supervisor Geral) têm autorização para adicionar setores.',
       );
     }
 
     final cleanName = name.trim();
     if (cleanName.isEmpty) {
-      throw Exception('Informe o nome da categoria mestre.');
+      throw Exception('Informe o nome do setor.');
     }
 
     final id = generateMasterCategorySlug(cleanName);
     if (_masterCategories.any((mc) => mc.id.toLowerCase() == id)) {
-      throw Exception('Já existe uma categoria mestre com o identificador "$id".');
+      throw Exception('Já existe um setor com o identificador "$id".');
     }
 
     final newMaster = MasterCategoryModel(
@@ -581,18 +581,18 @@ class InventoryService {
     if (!operator.isMasterPin) {
       throw Exception(
         'Acesso negado: O PIN informado pertence a "${operator.name}". '
-        'Apenas operadores com PIN Mestre têm autorização para modificar categorias mestres.',
+        'Apenas operadores com PIN Mestre têm autorização para modificar setores.',
       );
     }
 
     final index = _masterCategories.indexWhere((mc) => mc.id.toLowerCase() == id.toLowerCase());
     if (index == -1) {
-      throw Exception('Categoria mestre "$id" não encontrada.');
+      throw Exception('Setor "$id" não encontrado.');
     }
 
     final cleanName = name.trim();
     if (cleanName.isEmpty) {
-      throw Exception('O nome da categoria mestre não pode ser vazio.');
+      throw Exception('O nome do setor não pode ser vazio.');
     }
 
     final existing = _masterCategories[index];
@@ -635,13 +635,13 @@ class InventoryService {
     if (!operator.isMasterPin) {
       throw Exception(
         'Acesso negado: O PIN informado pertence a "${operator.name}". '
-        'Apenas operadores com PIN Mestre têm autorização para excluir categorias mestres.',
+        'Apenas operadores com PIN Mestre têm autorização para excluir setores.',
       );
     }
 
     final lowerId = id.toLowerCase();
     if (lowerId == 'outros') {
-      throw Exception('A categoria mestre "Outros" é padrão do sistema e não pode ser excluída.');
+      throw Exception('O setor "Outros" é padrão do sistema e não pode ser excluído.');
     }
 
     // Desvincula dos produtos que tinham essa categoria mestre, movendo para 'outros' se ficarem sem nenhuma
@@ -1113,7 +1113,7 @@ class InventoryService {
       if (!op.canModify(product)) {
         throw Exception(
           'Acesso negado: O PIN "${op.name}" (${op.masterCategoryLabel}) '
-          'não possui autorização para cadastrar produtos nesta categoria mestre.',
+          'não possui autorização para cadastrar produtos neste setor.',
         );
       }
       operatorName = op.name;
@@ -1307,7 +1307,7 @@ class InventoryService {
       if (targetProduct != null && !op.canModify(targetProduct)) {
         throw Exception(
           'Acesso negado: O PIN "${op.name}" (${op.masterCategoryLabel}) '
-          'não possui autorização para excluir produtos desta categoria mestre.',
+          'não possui autorização para excluir produtos deste setor.',
         );
       }
       operatorName = op.name;
@@ -1699,7 +1699,7 @@ class InventoryService {
 
     final operatorPin = await validatePin(pin);
     if (operatorPin == null || !operatorPin.isMasterPin) {
-      throw Exception('Apenas operadores com PIN Mestre têm permissão para adicionar produtos a categorias mestres.');
+      throw Exception('Apenas operadores com PIN Mestre têm permissão para adicionar produtos a setores.');
     }
 
     final catId = targetMasterCategoryId.toLowerCase().trim();
@@ -1773,7 +1773,7 @@ class InventoryService {
 
     final operatorPin = await validatePin(pin);
     if (operatorPin == null || !operatorPin.isMasterPin) {
-      throw Exception('Apenas operadores com PIN Mestre têm permissão para remover produtos de categorias mestres.');
+      throw Exception('Apenas operadores com PIN Mestre têm permissão para remover produtos de setores.');
     }
 
     final catId = targetMasterCategoryId.toLowerCase().trim();

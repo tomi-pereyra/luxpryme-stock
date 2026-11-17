@@ -1,7 +1,7 @@
 # 📘 Manual de Uso do Sistema — Estoque Luxpryme
 
 **Versão do Sistema:** 1.2.0  
-**Data da Edição:** Novembro / 2026  
+**Data da Edição:** Novembro de 2026  
 **Empresa:** Luxpryme Indústria Eletrônica  
 **Ambientes Suportados:** Windows 10/11 (Desktop) e Android 7.0+ (Celulares e Coletores)
 
@@ -10,14 +10,14 @@
 ## 📑 Sumário
 
 1. [Visão Geral do Sistema](#1-visão-geral-do-sistema)
-2. [Arquitetura de Categorias Mestres](#2-arquitetura-de-categorias-mestres)
+2. [Arquitetura de Setores da Fábrica](#2-arquitetura-de-setores-da-fábrica)
 3. [Controle de Acesso e Hierarquia de PINs](#3-controle-de-acesso-e-hierarquia-de-pins)
 4. [Interface do Usuário: Desktop vs Versão Mobile Redesenhada](#4-interface-do-usuário-desktop-vs-versão-mobile-redesenhada)
 5. [Como Navegar, Buscar Produtos e Filtrar](#5-como-navegar-buscar-produtos-e-filtrar)
-6. [Gestão em Lote de Categorias Mestres (+ Itens e - Itens)](#6-gestão-em-lote-de-categorias-mestres--itens-e---itens)
+6. [Gestão em Lote de Setores (+ Itens e - Itens)](#6-gestão-em-lote-de-setores--itens-e---itens)
 7. [Movimentação de Estoque, Carrinho com Observação e Baixa com PIN](#7-movimentação-de-estoque-carrinho-com-observação-e-baixa-com-pin)
 8. [Cadastro e Edição de Produtos](#8-cadastro-e-edição-de-produtos)
-9. [Gerenciamento de Categorias Mestres Dinâmicas](#9-gerenciamento-de-categorias-mestres-dinâmicas)
+9. [Gerenciamento de Setores Dinâmicos](#9-gerenciamento-de-setores-dinâmicos)
 10. [Painel do Administrador (Exclusivo Windows)](#10-painel-do-administrador-exclusivo-windows)
 11. [Operação 100% Offline-First e Sincronização em Segundo Plano](#11-operação-100-offline-first-e-sincronização-em-segundo-plano)
 12. [Detecção e Resolução de Conflitos de Estoque (Saldo Negativo)](#12-detecção-e-resolução-de-conflitos-de-estoque-saldo-negativo)
@@ -36,26 +36,26 @@ O **Estoque Luxpryme** é o software oficial de controle de estoque industrial d
 * **Tecnologia Offline-First com Cache em Disco:** O sistema baixa todo o catálogo uma única vez. Ao reabrir o app, o carregamento é instantâneo (**0 segundos de espera**), funcionando perfeitamente sem internet ou com sinal instável.
 * **Sincronização em Segundo Plano:** Assim que houver conexão, as alterações feitas offline são enviadas automaticamente para a nuvem via Supabase.
 * **Detecção Automática de Conflitos:** Se dispositivos desconectados retirarem produtos simultaneamente e o saldo ficar negativo, o sistema alerta e disponibiliza opções imediatas para regularizar o estoque.
-* **Separação por Categorias Mestres:** Organização clara entre *Eletrônica*, *Produção*, *Outros* e setores customizados.
+* **Separação por Setores:** Organização clara entre *Eletrônica*, *Produção*, *Outros* e setores customizados adicionados pela supervisão.
 * **Rastreabilidade e Segurança com PIN de 4 Dígitos:** Toda separação de peças exige o PIN do operador, garantindo auditoria completa com registro opcional de observação técnica.
 
 ---
 
-## 2. Arquitetura de Categorias Mestres
+## 2. Arquitetura de Setores da Fábrica
 
-Para organizar estoques de grande porte e segmentar as responsabilidades por setor da fábrica, o sistema adota as **Categorias Mestres**.
+Para organizar estoques de grande porte e segmentar as responsabilidades por setor da fábrica, o sistema adota a separação por **Setores**.
 
-### As Categorias Mestres Padrão:
+### Os Setores Padrão:
 
-| Categoria Mestre | Cor Visual | Descrição e Finalidade |
+| Setor | Cor Visual | Descrição e Finalidade |
 | :--- | :--- | :--- |
 | **Eletrônica** | 🔵 Azul | Componentes SMD, componentes PTH, circuitos integrados, PCBs virgens e placas montadas/testadas. Setor exclusivo do laboratório eletrônico. |
 | **Produção** | 🟢 Verde | Componentes mecânicos, carcaças plásticas, lentes, parafusos, baterias, chicotes e insumos usados na montagem do produto final de iluminação. |
 | **Outros** | ⚪ Cinza Slate | Insumos gerais de fábrica, manutenção predial, hidráulica, civil, limpeza e ferramentas de apoio. |
 
-### Compartilhamento entre Categorias:
-Um produto pode pertencer a **mais de uma Categoria Mestre** ao mesmo tempo.  
-*Exemplo:* Uma bateria industrial ou chicote elétrico soldado na bancada de eletrônica e também utilizado na linha de montagem pode ter marcadas as categorias **Eletrônica** e **Produção**. Operadores de ambos os setores poderão requisitá-lo.
+### Compartilhamento entre Setores:
+Um produto pode pertencer a **mais de um Setor** ao mesmo tempo.  
+*Exemplo:* Uma bateria industrial ou chicote elétrico soldado na bancada de eletrônica e também utilizado na linha de montagem pode ter marcados os setores **Eletrônica** e **Produção**. Operadores de ambos os setores poderão requisitá-lo.
 
 ---
 
@@ -65,24 +65,24 @@ O sistema protege o estoque definindo alçadas de autorização através de PINs
 
 ```mermaid
 flowchart TD
-    A["PIN Mestre (Supervisor Tomas - 2026)"] --> B["Acesso a Qualquer Categoria Mestre"]
-    A --> C["Adiciona / Modifica / Exclui Categorias Mestres"]
+    A["PIN Mestre (Supervisor Geral)"] --> B["Acesso a Qualquer Setor da Fábrica"]
+    A --> C["Adiciona / Modifica / Exclui Setores"]
     A --> D["Cria e Gerencia PINs de Operadores"]
     A --> E["Edita / Exclui Produtos"]
     A --> F["Resolve Conflitos de Saldo Negativo"]
     A --> G["Adiciona (+ Itens) ou Remove (- Itens) em Lote"]
     
-    H["PIN de Eletrônica (Linha SMD 1111 / PTH 2222)"] --> I["Autorizado APENAS para itens de Eletrônica"]
-    J["PIN de Produção (Roberto 1234 / Montagem 3333)"] --> K["Autorizado APENAS para itens de Produção"]
-    L["PIN Setorial (Ex: Preparação / Embalamento)"] --> M["Autorizado APENAS para itens do seu setor"]
+    H["PIN Setorial de Eletrônica (Linhas e Bancadas)"] --> I["Autorizado APENAS para itens de Eletrônica"]
+    J["PIN Setorial de Produção (Líderes e Montagem)"] --> K["Autorizado APENAS para itens de Produção"]
+    L["PIN Setorial Customizado (Ex: Preparação / Embalamento)"] --> M["Autorizado APENAS para itens do seu setor"]
 ```
 
 ### Regras de Permissão:
-1. **PIN Mestre (Todas as Categorias):**
+1. **PIN Mestre (Acesso a Todos os Setores):**
    - Autorização irrestrita para retirar ou depositar qualquer item do catálogo.
-   - É o **único** autorizado a adicionar, modificar ou excluir Categorias Mestres, resolver conflitos de saldo negativo e usar as funções de lote `+ Itens` e `- Itens`.
+   - É o **único** autorizado a adicionar, modificar ou excluir Setores, resolver conflitos de saldo negativo e usar as funções de lote `+ Itens` e `- Itens`.
 2. **PIN Setorial (Eletrônica / Produção / Personalizado):**
-   - Autorizado a movimentar apenas itens vinculados à sua Categoria Mestre.
+   - Autorizado a movimentar apenas itens vinculados ao seu respectivo Setor.
    - Caso tente finalizar um carrinho contendo itens de outro setor, a requisição é bloqueada por segurança.
 
 ---
@@ -93,14 +93,14 @@ O aplicativo foi otimizado para proporcionar a melhor ergonomia tanto em monitor
 
 ### Versão Celular (Mobile):
 * **Menu Superior Limpo:** Logotipo oficial da Luxpryme, ícone de Lupa de busca expansível, Carrinho de Separação com contador vermelho, Histórico de Movimentações, Botão de Sincronizar e Botão de Logout.
-* **Barra de Categorias Mestres Compacta:** Ocupa espaço reduzido na tela com chips horizontais e botão de ordenação rápida integrado à direita.
-* **Acesso às Categorias Comuns no Mobile:** Para visualizar as categorias técnicas comuns (ex: *Componentes SMD*, *Baterias*, etc.), basta **manter pressionado (toque longo / long press)** o chip da categoria mestre em que você se encontra.
+* **Barra de Setores Compacta:** Ocupa espaço reduzido na tela com chips horizontais e botão de ordenação rápida integrado à direita.
+* **Acesso às Categorias Comuns no Mobile:** Para visualizar as categorias técnicas comuns (ex: *Componentes SMD*, *Baterias*, etc.), basta **manter pressionado (toque longo / long press)** o chip do setor em que você se encontra.
 * **Menu de Ações Flutuante (Canto Inferior Direito):** Um botão redondo abre uma lista suspensa com todas as ferramentas essenciais:
-  - `+ Itens` (Adicionar múltiplos produtos à categoria mestre).
-  - `- Itens` (Remover múltiplos produtos de uma categoria mestre).
+  - `+ Itens` (Adicionar múltiplos produtos a um setor).
+  - `- Itens` (Remover múltiplos produtos de um setor).
   - `Novo Item` (Cadastrar produto com PIN).
   - `Gerenciar Categorias Comuns`.
-  - `Gerenciar Categorias Mestres` (com PIN Mestre).
+  - `Gerenciar Setores` (com PIN Mestre).
   - `Modo Biblioteca` (Visão estruturada em árvore).
 
 ### Versão Computador (Desktop Windows):
@@ -115,12 +115,13 @@ A busca quebra o texto em termos independentes. Não é necessário digitar o no
 * Digitando `farol placa 16` o sistema encontra `MONTAGEM PLACA ELETRONICA FAROL 16 LEDS`.
 * Digitando o **Código Interno** (ex: `6857`) ou o **Part Number** do fabricante, o item é localizado imediatamente.
 
-### 5.2. Filtro Rápido por Categorias Mestres
+### 5.2. Filtro Rápido por Setores
 Na barra horizontal colorida:
 * **Todas:** Catálogo completo.
 * **Eletrônica:** Apenas componentes de laboratório e placas.
 * **Produção:** Apenas insumos e materiais de montagem final.
 * **Outros:** Almoxarifado geral e manutenção.
+* **Setores Personalizados:** Filtra imediatamente os produtos atribuídos ao setor criado.
 
 ### 5.3. Ordenação Dinâmica
 Ao clicar no ícone de ordenar (ou no menu suspenso), escolha entre:
@@ -130,28 +131,28 @@ Ao clicar no ícone de ordenar (ou no menu suspenso), escolha entre:
 
 ---
 
-## 6. Gestão em Lote de Categorias Mestres (+ Itens e - Itens)
+## 6. Gestão em Lote de Setores (+ Itens e - Itens)
 
 Disponível no menu flutuante inferior direito, essa ferramenta permite reclassificar rapidamente centenas de itens sem precisar abrir produto por produto.
 
 ### 6.1. Adicionar em Lote (+ Itens)
 1. Abra o menu inferior direito e clique em **+ Itens**.
-2. Selecione a **Categoria Mestre de Destino** (ex: *Produção*).
-3. **Filtro Inteligente:** O sistema exibe apenas os produtos que **ainda não pertencem** a essa categoria mestre.
+2. Selecione o **Setor de Destino** (ex: *Produção*).
+3. **Filtro Inteligente:** O sistema exibe apenas os produtos que **ainda não pertencem** a esse setor.
 4. Digite o nome ou código no campo de busca.
 5. Toque/clique nos itens desejados para selecioná-los:
    - Um contador em **círculo azul** com número branco surge à direita informando a quantidade de itens marcados.
    - O campo de busca **limpa automaticamente o texto** e mantém o cursor pronto para você pesquisar o próximo item sem perder tempo apagando letras.
-6. Clique em **Adicionar Selecionados à Categoria**.
-7. Digite o **PIN Mestre (2026)** para autenticar a alteração.
+6. Clique em **Adicionar ao Setor**.
+7. Digite o **PIN Mestre do Supervisor** para autenticar a alteração.
 
 ### 6.2. Remover em Lote (- Itens)
 1. Abra o menu inferior direito e clique em **- Itens**.
-2. Selecione a Categoria Mestre da qual deseja desvincular itens.
-3. **Filtro Exclusivo:** O sistema exibe **apenas os produtos que já pertencem** a essa categoria mestre.
+2. Selecione o Setor do qual deseja desvincular itens.
+3. **Filtro Exclusivo:** O sistema exibe **apenas os produtos que já pertencem** a esse setor.
 4. Selecione os produtos a remover.
-5. Clique em **Remover Selecionados da Categoria** e autentique com o **PIN Mestre**.  
-   *(Se um produto ficar sem nenhuma categoria mestre, ele é transferido automaticamente para "Outros" por segurança).*
+5. Clique em **Remover do Setor** e autentique com o **PIN Mestre**.  
+   *(Se um produto ficar sem nenhum setor vinculado, ele é transferido automaticamente para "Outros" por segurança).*
 
 ---
 
@@ -184,7 +185,7 @@ O sistema oferece dois modos de movimentação de saldo:
 2. Preencha as informações:
    - **Nome do Produto** (Obrigatório).
    - **Código Interno / P/N Fabricante / Código de Barras**.
-   - **Categorias Mestres:** Marque os setores autorizados (*Eletrônica*, *Produção*, *Outros*, etc.).
+   - **Setores:** Marque os setores autorizados (*Eletrônica*, *Produção*, *Outros*, etc.).
    - **Categoria Técnica Comum e Sub-categorias**.
    - **Estoque Inicial e Estoque Mínimo de Alerta**.
    - **Localização:** Ex: *Gaveteiro A3, Prateleira 2*.
@@ -197,18 +198,18 @@ O sistema oferece dois modos de movimentação de saldo:
 
 ---
 
-## 9. Gerenciamento de Categorias Mestres Dinâmicas
+## 9. Gerenciamento de Setores Dinâmicos
 
-Com o **PIN Mestre** (ex: `2026`), é possível cadastrar novos setores da fábrica sem precisar de suporte técnico.
+Com o **PIN Mestre do Supervisor**, é possível cadastrar novos setores da fábrica sem precisar de suporte técnico.
 
 ### Como Cadastrar um Novo Setor:
-1. No menu inferior direito (ou painel admin), clique em **Gerenciar Categorias Mestres**.
-2. Clique em **+ Nova Categoria Mestre**.
+1. No menu inferior direito (ou painel admin), clique em **Gerenciar Setores**.
+2. Clique em **+ Novo Setor**.
 3. Preencha:
    - **Nome do Setor** (ex: *Preparação*, *Embalamento*, *Corte de Cabos*).
    - Descrição breve.
    - Cor de identificação visual e ícone representativo.
-4. Digite o **PIN Mestre (4 dígitos)** e confirme.
+4. Digite o **PIN Mestre de 4 dígitos** e confirme.
 5. O novo setor surge imediatamente nas abas, filtros e telas de cadastro de PINs.
 
 ---
@@ -221,7 +222,7 @@ Disponível no computador para o usuário administrador autenticado (`tomibr20@g
 * **Cadastro de PINs de Operadores:**
   1. Digite o nome do operador ou bancada (ex: *Bancada Solda PTH 2*).
   2. Digite o PIN numérico exclusivo de 4 dígitos.
-  3. Selecione a alçada: **Mestre (Todas as Categorias)** ou **Setorial** (*Eletrônica*, *Produção*, *Preparação*, etc.).
+  3. Selecione a alçada: **Mestre (Acesso a Todos os Setores)** ou **Setorial** (*Eletrônica*, *Produção*, *Preparação*, etc.).
   4. Clique em **Cadastrar PIN**.
 * **Revogação Instantânea:** Toque no ícone de lixeira ao lado de qualquer operador para revogar o PIN imediatamente.
 
@@ -235,7 +236,7 @@ O **Estoque Luxpryme** foi construído com arquitetura de alta disponibilidade p
 1. **Cache Persistente no Aparelho:** Todo o inventário (> 5.420 produtos) fica gravado na memória interna do celular ou computador.
 2. **Abertura em 0ms:** O aplicativo não fica travado em telas de carregamento. Você abre e o catálogo já está pronto para uso.
 3. **Trabalho Sem Internet:**
-   - Você pode fazer baixas no carrinho, ajustes rápidos (+1/-1), cadastrar itens ou mexer em categorias normalmente sem conexão.
+   - Você pode fazer baixas no carrinho, ajustes rápidos (+1/-1), cadastrar itens ou mexer em setores normalmente sem conexão.
    - Cada ação é gravada no banco local e armazenada na **Fila de Sincronização Pendente** (`pending_sync_queue.json`).
 4. **Sincronização Automática em Segundo Plano:**
    - Ao detectar conexão com a internet, o sistema descarrega a fila silenciosamente para a nuvem.
@@ -299,13 +300,13 @@ Para auditar o fluxo de materiais da fábrica:
 **Sim.** O sistema possui tecnologia Offline-First. Todas as movimentações continuam funcionando normalmente e serão sincronizadas assim que a conexão retornar.
 
 ### 2. "Como vejo as subcategorias no celular se a barra não aparece?"
-No celular, a barra foi condensada para economizar espaço de tela. **Mantenha o dedo pressionado (toque longo)** sobre o botão da Categoria Mestre desejada para abrir a gaveta com todas as categorias comuns e subcategorias técnicas.
+No celular, a barra foi condensada para economizar espaço de tela. **Mantenha o dedo pressionado (toque longo)** sobre o botão do Setor desejado para abrir a gaveta com todas as categorias comuns e subcategorias técnicas.
 
-### 3. "Como adicionar vários itens de uma vez para uma categoria mestre?"
-Abra o menu circular no canto inferior direito e toque em **+ Itens**. Selecione a categoria mestre de destino e pesquise os itens. Ao tocar em cada um, o sistema conta no círculo azul e limpa a busca automaticamente para agilizar.
+### 3. "Como adicionar vários itens de uma vez para um setor?"
+Abra o menu circular no canto inferior direito e toque em **+ Itens**. Selecione o setor de destino e pesquise os itens. Ao tocar em cada um, o sistema conta no círculo azul e limpa a busca automaticamente para agilizar.
 
 ### 4. "Por que meu PIN de operador foi rejeitado no carrinho?"
-Verifique as categorias mestres dos itens selecionados. Um PIN setorial (ex: Eletrônica) só pode movimentar itens de sua área. Para movimentar itens mistos, utilize o PIN de cada setor ou o PIN Mestre do supervisor (`2026`).
+Verifique os setores dos itens selecionados. Um PIN setorial (ex: Eletrônica) só pode movimentar itens de sua área. Para movimentar itens mistos, utilize o PIN de cada setor ou o PIN Mestre do supervisor geral.
 
 ### 5. "O que significa o banner de alerta de conflito de estoque?"
 Significa que dois operadores deram baixa em um mesmo componente em aparelhos desconectados, fazendo o saldo daquele item ficar abaixo de zero ao sincronizar. Basta clicar em **Resolver** e escolher zerar ou digitar a contagem real física.
