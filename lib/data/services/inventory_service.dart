@@ -10,11 +10,15 @@ import '../models/category_model.dart';
 import '../models/master_category_model.dart';
 import '../models/operator_pin_model.dart';
 import '../models/product_model.dart';
+import '../models/stock_conflict_model.dart';
 import '../models/stock_movement_model.dart';
+import 'local_cache_service.dart';
 
 class InventoryService {
   InventoryService._() {
     _initLocalData();
+    // Inicia carregamento do cache em disco em segundo plano
+    initLocalCache();
   }
   static final InventoryService instance = InventoryService._();
 
@@ -74,6 +78,7 @@ class InventoryService {
   late List<OperatorPinModel> _localPins;
   late List<StockMovementModel> _localMovements;
   late List<MasterCategoryModel> _masterCategories;
+  List<StockConflictModel> _conflicts = [];
 
   final _categoriesStreamController =
       StreamController<List<CategoryModel>>.broadcast();
@@ -85,9 +90,83 @@ class InventoryService {
       StreamController<List<StockMovementModel>>.broadcast();
   final _masterCategoriesStreamController =
       StreamController<List<MasterCategoryModel>>.broadcast();
+  final _conflictsStreamController =
+      StreamController<List<StockConflictModel>>.broadcast();
 
   List<MasterCategoryModel> get masterCategories =>
       List.unmodifiable(_masterCategories);
+
+  List<StockConflictModel> get activeConflicts =>
+      List.unmodifiable(_conflicts);
+
+  Stream<List<StockConflictModel>> streamStockConflicts() {
+    Timer.run(() {
+      if (!_conflictsStreamController.isClosed) {
+        _conflictsStreamController.add(List.unmodifiable(_conflicts));
+      }
+    });
+    return _conflictsStreamController.stream;
+  }
+
+  bool _isCacheLoaded = false;
+  bool get isCacheLoaded => _isCacheLoaded;
+
+  Future<void> initLocalCache() async {
+    try {
+      final cachedProducts = await LocalCacheService.instance.loadProducts();
+      if (cachedProducts != null && cachedProducts.isNotEmpty) {
+        _allProducts = cachedProducts;
+        _localProducts = cachedProducts;
+        if (!_productsStreamController.isClosed) {
+          _productsStreamController.add(List.unmodifiable(_allProducts));
+        }
+      }
+
+      final cachedCategories = await LocalCacheService.instance.loadCategories();
+      if (cachedCategories != null && cachedCategories.isNotEmpty) {
+        _localCategories = cachedCategories;
+        if (!_categoriesStreamController.isClosed) {
+          _categoriesStreamController.add(List.unmodifiable(_localCategories));
+        }
+      }
+
+      final cachedMasterCats = await LocalCacheService.instance.loadMasterCategories();
+      if (cachedMasterCats != null && cachedMasterCats.isNotEmpty) {
+        _masterCategories = cachedMasterCats;
+        if (!_masterCategoriesStreamController.isClosed) {
+          _masterCategoriesStreamController.add(List.unmodifiable(_masterCategories));
+        }
+      }
+
+      final cachedPins = await LocalCacheService.instance.loadPins();
+      if (cachedPins != null && cachedPins.isNotEmpty) {
+        _localPins = cachedPins;
+        if (!_pinsStreamController.isClosed) {
+          _pinsStreamController.add(List.unmodifiable(_localPins));
+        }
+      }
+
+      final cachedMovements = await LocalCacheService.instance.loadMovements();
+      if (cachedMovements != null && cachedMovements.isNotEmpty) {
+        _localMovements = cachedMovements;
+        if (!_movementsStreamController.isClosed) {
+          _movementsStreamController.add(List.unmodifiable(_localMovements));
+        }
+      }
+
+      final cachedConflicts = await LocalCacheService.instance.loadConflicts();
+      if (cachedConflicts.isNotEmpty) {
+        _conflicts = cachedConflicts;
+        if (!_conflictsStreamController.isClosed) {
+          _conflictsStreamController.add(List.unmodifiable(_conflicts));
+        }
+      }
+
+      _isCacheLoaded = true;
+    } catch (e) {
+      debugPrint('Aviso ao inicializar cache local persistente: $e');
+    }
+  }
 
   void _initLocalData() {
     _localCategories = List.from(luxprymeDefaultCategories);
@@ -639,12 +718,12 @@ class InventoryService {
       return _productsStreamController.stream;
     }
 
-    // Se já temos produtos carregados na memória, emite imediatamente
+    // Se já temos produtos carregados na memória (do cache ou pré-carregados), emite imediatamente (0ms)
     if (_allProducts.isNotEmpty) {
       Timer.run(() => _productsStreamController.add(List.unmodifiable(_allProducts)));
     }
 
-    // Dispara a carga de todas as páginas no Supabase (superando o limite de 1000)
+    // Sincroniza em segundo plano sem congelar a interface
     fetchProducts();
 
     // Inscreve no canal realtime para receber alterações incrementais
@@ -653,14 +732,148 @@ class InventoryService {
     return _productsStreamController.stream;
   }
 
-  Future<List<ProductModel>> fetchProducts() async {
-    if (_isLocalMode || _client == null) {
-      return _localProducts;
+  bool _isFlushingQueue = false;
+
+  Future<void> _flushPendingSyncQueue() async {
+    if (_isFlushingQueue || _isLocalMode || _client == null) return;
+    _isFlushingQueue = true;
+    try {
+      final queue = await LocalCacheService.instance.loadPendingSyncActions();
+      if (queue.isEmpty) return;
+
+      debugPrint('Sincronizando ${queue.length} ações pendentes da fila offline...');
+      for (final action in queue) {
+        final type = action['action_type']?.toString();
+        try {
+          switch (type) {
+            case 'quick_adjust':
+              final productId = action['product_id']?.toString();
+              final newQty = action['new_quantity'] as int?;
+              if (productId != null && newQty != null) {
+                await _client!
+                    .from(AppConstants.tableProducts)
+                    .update({'quantity': newQty})
+                    .eq('id', productId);
+              }
+              if (action['movement'] != null) {
+                final mov = StockMovementModel.fromMap(Map<String, dynamic>.from(action['movement']));
+                await _recordMovement(mov);
+              }
+              break;
+
+            case 'checkout_cart':
+              final List items = action['items'] as List? ?? [];
+              for (final it in items) {
+                final itMap = Map<String, dynamic>.from(it);
+                final pId = itMap['product_id']?.toString();
+                final nQty = itMap['new_quantity'] as int?;
+                if (pId != null && nQty != null) {
+                  await _client!
+                      .from(AppConstants.tableProducts)
+                      .update({'quantity': nQty})
+                      .eq('id', pId);
+                }
+              }
+              final List movements = action['movements'] as List? ?? [];
+              for (final m in movements) {
+                final mov = StockMovementModel.fromMap(Map<String, dynamic>.from(m));
+                await _recordMovement(mov);
+              }
+              break;
+
+            case 'create_product':
+              final productMap = Map<String, dynamic>.from(action['product']);
+              final prod = ProductModel.fromMap(productMap);
+              await _client!.from(AppConstants.tableProducts).insert(prod.toMap());
+              break;
+
+            case 'update_product':
+              final productMap = Map<String, dynamic>.from(action['product']);
+              final prod = ProductModel.fromMap(productMap);
+              await _client!
+                  .from(AppConstants.tableProducts)
+                  .update(prod.toMap())
+                  .eq('id', prod.id);
+              break;
+
+            case 'delete_product':
+              final pId = action['product_id']?.toString();
+              if (pId != null) {
+                await _client!.from(AppConstants.tableProducts).delete().eq('id', pId);
+              }
+              break;
+
+            case 'bulk_add_master_cat':
+            case 'bulk_remove_master_cat':
+            case 'move_master_cat':
+              final pId = action['product_id']?.toString();
+              final mCats = (action['master_categories'] as List?)?.map((e) => e.toString()).toList();
+              if (pId != null && mCats != null) {
+                await _client!
+                    .from(AppConstants.tableProducts)
+                    .update({'master_categories': mCats})
+                    .eq('id', pId);
+              }
+              break;
+
+            case 'resolve_conflict':
+              final pId = action['product_id']?.toString();
+              final qty = action['quantity'] as int?;
+              if (pId != null && qty != null) {
+                await _client!
+                    .from(AppConstants.tableProducts)
+                    .update({'quantity': qty})
+                    .eq('id', pId);
+              }
+              if (action['movement'] != null) {
+                final mov = StockMovementModel.fromMap(Map<String, dynamic>.from(action['movement']));
+                await _recordMovement(mov);
+              }
+              break;
+          }
+        } catch (itemErr) {
+          debugPrint('Aviso ao sincronizar item da fila offline ($type): $itemErr');
+        }
+      }
+      await LocalCacheService.instance.clearPendingSyncActions();
+      debugPrint('Fila offline descarregada com sucesso.');
+    } catch (e) {
+      debugPrint('Aviso ao descarregar fila offline: $e');
+    } finally {
+      _isFlushingQueue = false;
     }
+  }
+
+  Future<List<ProductModel>> fetchProducts({bool forceRefresh = false}) async {
+    if (_isLocalMode || _client == null) {
+      return _allProducts.isNotEmpty ? _allProducts : _localProducts;
+    }
+
+    // Se já temos produtos no catálogo local e não é atualização forçada, retorna imediatamente
+    // e executa a sincronização em segundo plano para não congelar o app
+    if (_allProducts.isNotEmpty && !forceRefresh) {
+      scheduleMicrotask(() async {
+        try {
+          await _executeProductsFetch();
+        } catch (e) {
+          debugPrint('Sincronização em segundo plano com Supabase: $e');
+        }
+      });
+      return _allProducts;
+    }
+
+    return _executeProductsFetch();
+  }
+
+  Future<List<ProductModel>> _executeProductsFetch() async {
     if (_isLoadingProducts) return _allProducts;
     _isLoadingProducts = true;
 
     try {
+      // 1. Descarrega qualquer alteração offline pendente
+      await _flushPendingSyncQueue();
+
+      // 2. Baixa catálogo completo do Supabase superando o limite de 1000
       final List<ProductModel> loaded = [];
       int from = 0;
       const int pageSize = 1000;
@@ -682,15 +895,163 @@ class InventoryService {
       }
 
       _allProducts = loaded;
+      _localProducts = loaded;
+
+      // 3. Salva no cache local em disco (para inicializações instantâneas)
+      await LocalCacheService.instance.saveProducts(_allProducts);
+
+      // 4. Detecção de Conflitos: Verifica produtos com saldo negativo
+      _detectAndHandleStockConflicts();
+
       if (!_productsStreamController.isClosed) {
         _productsStreamController.add(List.unmodifiable(_allProducts));
       }
       return _allProducts;
     } catch (e) {
-      debugPrint('Erro ao carregar catálogo completo de produtos: $e');
-      rethrow;
+      debugPrint('Aviso ao baixar catálogo do Supabase (mantendo cache local): $e');
+      // Se falhou por falta de internet, carrega do cache local se ainda não o tiver
+      if (_allProducts.isEmpty) {
+        final cached = await LocalCacheService.instance.loadProducts();
+        if (cached != null && cached.isNotEmpty) {
+          _allProducts = cached;
+          _localProducts = cached;
+          _detectAndHandleStockConflicts();
+          if (!_productsStreamController.isClosed) {
+            _productsStreamController.add(List.unmodifiable(_allProducts));
+          }
+        }
+      }
+      return _allProducts;
     } finally {
       _isLoadingProducts = false;
+    }
+  }
+
+  void _detectAndHandleStockConflicts() {
+    final List<StockConflictModel> detected = [];
+    for (final p in _allProducts) {
+      if (p.quantity < 0) {
+        detected.add(StockConflictModel(
+          id: 'conflict-${p.id}',
+          productId: p.id,
+          productName: p.name,
+          productCode: p.code,
+          internalCode: p.internalCode,
+          currentQuantity: p.quantity,
+          deficitAmount: -p.quantity,
+          reason: 'Saldo negativo detectado após saídas simultâneas registradas em múltiplos dispositivos.',
+          detectedAt: DateTime.now(),
+        ));
+      }
+    }
+    _conflicts = detected;
+    LocalCacheService.instance.saveConflicts(_conflicts);
+    if (!_conflictsStreamController.isClosed) {
+      _conflictsStreamController.add(List.unmodifiable(_conflicts));
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // RESOLUÇÃO DE CONFLITOS DE ESTOQUE (SALDO NEGATIVO)
+  // ---------------------------------------------------------------------------
+
+  Future<void> resolveConflictSetStock({
+    required String conflictId,
+    required String productId,
+    required int newQuantity,
+    required String masterPin,
+    String? note,
+  }) async {
+    final operator = await validatePin(masterPin);
+    if (operator == null) {
+      throw Exception('PIN incorreto ou não cadastrado.');
+    }
+    if (!operator.isMasterPin) {
+      throw Exception('Apenas operadores com PIN Mestre têm autorização para resolver conflitos de estoque.');
+    }
+    if (newQuantity < 0) {
+      throw Exception('A nova quantidade informada não pode ser negativa.');
+    }
+
+    final pIdx = _allProducts.indexWhere((p) => p.id == productId);
+    ProductModel? product;
+    int oldQty = 0;
+    if (pIdx != -1) {
+      product = _allProducts[pIdx];
+      oldQty = product.quantity;
+      _allProducts[pIdx] = product.copyWith(
+        quantity: newQuantity,
+        updatedAt: DateTime.now(),
+      );
+      if (!_productsStreamController.isClosed) {
+        _productsStreamController.add(List.unmodifiable(_allProducts));
+      }
+      await LocalCacheService.instance.saveProducts(_allProducts);
+    }
+
+    final movement = StockMovementModel(
+      id: 'mov-resolve-${DateTime.now().microsecondsSinceEpoch}',
+      productId: productId,
+      productName: product?.name ?? 'Item Conflito',
+      productCode: product?.code,
+      internalCode: product?.internalCode,
+      manufacturerCode: product?.manufacturerCode,
+      categoryNames: product?.categoryNames ?? [],
+      delta: newQuantity - oldQty,
+      previousQuantity: oldQty,
+      newQuantity: newQuantity,
+      type: 'CONFLICT_RESOLUTION_SET',
+      operatorName: operator.name,
+      pinUsed: '****',
+      notes: note ?? 'Resolução de Conflito: Saldo real ajustado para $newQuantity un.',
+      createdAt: DateTime.now(),
+    );
+
+    await _recordMovement(movement);
+
+    if (!_isLocalMode && _client != null) {
+      try {
+        await _client!
+            .from(AppConstants.tableProducts)
+            .update({'quantity': newQuantity})
+            .eq('id', productId);
+      } catch (e) {
+        await LocalCacheService.instance.queueSyncAction({
+          'action_type': 'resolve_conflict',
+          'product_id': productId,
+          'quantity': newQuantity,
+          'movement': movement.toMap(),
+        });
+      }
+    }
+
+    _conflicts.removeWhere((c) => c.id == conflictId || c.productId == productId);
+    await LocalCacheService.instance.saveConflicts(_conflicts);
+    if (!_conflictsStreamController.isClosed) {
+      _conflictsStreamController.add(List.unmodifiable(_conflicts));
+    }
+  }
+
+  Future<void> resolveConflictRevertDeficit({
+    required String conflictId,
+    required String productId,
+    required int deficitAmount,
+    required String masterPin,
+  }) async {
+    return resolveConflictSetStock(
+      conflictId: conflictId,
+      productId: productId,
+      newQuantity: 0,
+      masterPin: masterPin,
+      note: 'Resolução de Conflito: Estorno do déficit de $deficitAmount un (saldo redefinido para 0 un).',
+    );
+  }
+
+  Future<void> dismissConflict(String conflictId) async {
+    _conflicts.removeWhere((c) => c.id == conflictId);
+    await LocalCacheService.instance.saveConflicts(_conflicts);
+    if (!_conflictsStreamController.isClosed) {
+      _conflictsStreamController.add(List.unmodifiable(_conflicts));
     }
   }
 
@@ -783,8 +1144,14 @@ class InventoryService {
       createdAt: DateTime.now(),
     );
 
+    _allProducts.insert(0, newProduct);
+    _localProducts.insert(0, newProduct);
+    if (!_productsStreamController.isClosed) {
+      _productsStreamController.add(List.unmodifiable(_allProducts));
+    }
+    await LocalCacheService.instance.saveProducts(_allProducts);
+
     if (_isLocalMode || _client == null) {
-      _localProducts.insert(0, newProduct);
       if (newProduct.quantity > 0) {
         await _recordMovement(movement);
       }
@@ -814,13 +1181,29 @@ class InventoryService {
                 ? (tag.isEmpty ? null : tag.trim())
                 : '$cleanNotes$tag';
 
-            await _client!.from(AppConstants.tableProducts).insert(payload);
+            try {
+              await _client!.from(AppConstants.tableProducts).insert(payload);
+            } catch (e3) {
+              debugPrint('Aviso: offline ao criar produto, enfileirando: $e3');
+              await LocalCacheService.instance.queueSyncAction({
+                'action_type': 'create_product',
+                'product': newProduct.toMap(),
+              });
+            }
           } else {
-            rethrow;
+            debugPrint('Aviso: offline ao criar produto, enfileirando: $e2');
+            await LocalCacheService.instance.queueSyncAction({
+              'action_type': 'create_product',
+              'product': newProduct.toMap(),
+            });
           }
         }
       } else {
-        rethrow;
+        debugPrint('Aviso: offline ao criar produto, enfileirando: $e');
+        await LocalCacheService.instance.queueSyncAction({
+          'action_type': 'create_product',
+          'product': newProduct.toMap(),
+        });
       }
     }
 
@@ -834,16 +1217,26 @@ class InventoryService {
       throw Exception('A quantidade não pode ser negativa.');
     }
 
+    final updated = product.copyWith(updatedAt: DateTime.now());
+    final index = _localProducts.indexWhere((p) => p.id == product.id);
+    if (index != -1) {
+      _localProducts[index] = updated;
+    }
+    final allIdx = _allProducts.indexWhere((p) => p.id == product.id);
+    if (allIdx != -1) {
+      _allProducts[allIdx] = updated;
+    }
+    await LocalCacheService.instance.saveProducts(_allProducts.isNotEmpty ? _allProducts : _localProducts);
+    if (!_productsStreamController.isClosed) {
+      _productsStreamController.add(List.unmodifiable(_allProducts.isNotEmpty ? _allProducts : _localProducts));
+    }
+
     if (_isLocalMode || _client == null) {
-      final index = _localProducts.indexWhere((p) => p.id == product.id);
-      if (index != -1) {
-        _localProducts[index] = product.copyWith(updatedAt: DateTime.now());
-        _notifyLocal();
-      }
+      _notifyLocal();
       return;
     }
 
-    final payload = product.toMap();
+    final payload = updated.toMap();
     try {
       await _client!
           .from(AppConstants.tableProducts)
@@ -861,26 +1254,39 @@ class InventoryService {
         } catch (e2) {
           if (e2.toString().contains('subcategory') || e2.toString().contains('PGRST204')) {
             payload.remove('subcategory');
-            final currentNotes = product.notes ?? '';
+            final currentNotes = updated.notes ?? '';
             final cleanNotes =
                 currentNotes.replaceAll(RegExp(r'\s*\[subcats?:[^\]]*\]'), '').trim();
-            final tag = product.subcategories.isNotEmpty
-                ? ' [subcats:${product.subcategories.join(";;")}]'
+            final tag = updated.subcategories.isNotEmpty
+                ? ' [subcats:${updated.subcategories.join(";;")}]'
                 : '';
             payload['notes'] = cleanNotes.isEmpty
                 ? (tag.isEmpty ? null : tag.trim())
                 : '$cleanNotes$tag';
 
-            await _client!
-                .from(AppConstants.tableProducts)
-                .update(payload)
-                .eq('id', product.id);
+            try {
+              await _client!
+                  .from(AppConstants.tableProducts)
+                  .update(payload)
+                  .eq('id', product.id);
+            } catch (e3) {
+              await LocalCacheService.instance.queueSyncAction({
+                'action_type': 'update_product',
+                'product': updated.toMap(),
+              });
+            }
           } else {
-            rethrow;
+            await LocalCacheService.instance.queueSyncAction({
+              'action_type': 'update_product',
+              'product': updated.toMap(),
+            });
           }
         }
       } else {
-        rethrow;
+        await LocalCacheService.instance.queueSyncAction({
+          'action_type': 'update_product',
+          'product': updated.toMap(),
+        });
       }
     }
   }
@@ -890,6 +1296,8 @@ class InventoryService {
     ProductModel? targetProduct;
     if (_localProducts.any((p) => p.id == productId)) {
       targetProduct = _localProducts.firstWhere((p) => p.id == productId);
+    } else if (_allProducts.any((p) => p.id == productId)) {
+      targetProduct = _allProducts.firstWhere((p) => p.id == productId);
     }
 
     String operatorName = 'Administrador';
@@ -924,22 +1332,33 @@ class InventoryService {
           )
         : null;
 
+    _localProducts.removeWhere((p) => p.id == productId);
+    _allProducts.removeWhere((p) => p.id == productId);
+    await LocalCacheService.instance.saveProducts(_allProducts.isNotEmpty ? _allProducts : _localProducts);
+    if (!_productsStreamController.isClosed) {
+      _productsStreamController.add(List.unmodifiable(_allProducts.isNotEmpty ? _allProducts : _localProducts));
+    }
+
+    if (movement != null) {
+      await _recordMovement(movement);
+    }
+
     if (_isLocalMode || _client == null) {
-      _localProducts.removeWhere((p) => p.id == productId);
-      if (movement != null) {
-        await _recordMovement(movement);
-      }
       _notifyLocal();
       return;
     }
 
-    await _client!
-        .from(AppConstants.tableProducts)
-        .delete()
-        .eq('id', productId);
-
-    if (movement != null) {
-      await _recordMovement(movement);
+    try {
+      await _client!
+          .from(AppConstants.tableProducts)
+          .delete()
+          .eq('id', productId);
+    } catch (e) {
+      debugPrint('Aviso: offline ao deletar produto, enfileirando: $e');
+      await LocalCacheService.instance.queueSyncAction({
+        'action_type': 'delete_product',
+        'product_id': productId,
+      });
     }
   }
 
@@ -989,26 +1408,50 @@ class InventoryService {
       createdAt: DateTime.now(),
     );
 
+    // 1. Sempre atualiza em memória imediatamente
+    final localIdx = _localProducts.indexWhere((p) => p.id == product.id);
+    if (localIdx != -1) {
+      _localProducts[localIdx] = _localProducts[localIdx].copyWith(
+        quantity: newQuantity,
+        updatedAt: DateTime.now(),
+      );
+    }
+    final allIdx = _allProducts.indexWhere((p) => p.id == product.id);
+    if (allIdx != -1) {
+      _allProducts[allIdx] = _allProducts[allIdx].copyWith(
+        quantity: newQuantity,
+        updatedAt: DateTime.now(),
+      );
+    }
+
+    await _recordMovement(movement);
+    await LocalCacheService.instance.saveProducts(_allProducts.isNotEmpty ? _allProducts : _localProducts);
+
+    if (!_productsStreamController.isClosed) {
+      _productsStreamController.add(List.unmodifiable(_allProducts.isNotEmpty ? _allProducts : _localProducts));
+    }
+
     if (_isLocalMode || _client == null) {
-      final index = _localProducts.indexWhere((p) => p.id == product.id);
-      if (index != -1) {
-        _localProducts[index] = _localProducts[index].copyWith(
-          quantity: newQuantity,
-          updatedAt: DateTime.now(),
-        );
-      }
-      await _recordMovement(movement);
       _notifyLocal();
       return newQuantity;
     }
 
-    // Supabase
-    await _client!
-        .from(AppConstants.tableProducts)
-        .update({'quantity': newQuantity})
-        .eq('id', product.id);
+    // Supabase com fallback offline resiliente
+    try {
+      await _client!
+          .from(AppConstants.tableProducts)
+          .update({'quantity': newQuantity})
+          .eq('id', product.id);
+    } catch (e) {
+      debugPrint('Aviso: falha de rede no ajuste unitário, enfileirando ação offline: $e');
+      await LocalCacheService.instance.queueSyncAction({
+        'action_type': 'quick_adjust',
+        'product_id': product.id,
+        'new_quantity': newQuantity,
+        'movement': movement.toMap(),
+      });
+    }
 
-    await _recordMovement(movement);
     return newQuantity;
   }
 
@@ -1128,25 +1571,47 @@ class InventoryService {
         createdAt: now,
       );
 
-      if (_isLocalMode || _client == null) {
-        final index = _localProducts.indexWhere((p) => p.id == item.product.id);
-        if (index != -1) {
-          _localProducts[index] = _localProducts[index].copyWith(
-            quantity: newStock,
-            updatedAt: now,
-          );
-        }
-        await _recordMovement(movement);
-      } else {
-        await _client!
-            .from(AppConstants.tableProducts)
-            .update({'quantity': newStock})
-            .eq('id', item.product.id);
+      // Atualiza memória local imediatamente
+      final idx = _localProducts.indexWhere((p) => p.id == item.product.id);
+      if (idx != -1) {
+        _localProducts[idx] = _localProducts[idx].copyWith(
+          quantity: newStock,
+          updatedAt: now,
+        );
+      }
+      final allIdx = _allProducts.indexWhere((p) => p.id == item.product.id);
+      if (allIdx != -1) {
+        _allProducts[allIdx] = _allProducts[allIdx].copyWith(
+          quantity: newStock,
+          updatedAt: now,
+        );
+      }
 
-        await _recordMovement(movement);
+      await _recordMovement(movement);
+
+      if (!_isLocalMode && _client != null) {
+        try {
+          await _client!
+              .from(AppConstants.tableProducts)
+              .update({'quantity': newStock})
+              .eq('id', item.product.id);
+        } catch (e) {
+          debugPrint('Aviso: falha ao sincronizar item do carrinho ($e), enfileirando offline.');
+          await LocalCacheService.instance.queueSyncAction({
+            'action_type': 'quick_adjust',
+            'product_id': item.product.id,
+            'new_quantity': newStock,
+            'movement': movement.toMap(),
+          });
+        }
       }
     }
 
+    await LocalCacheService.instance.saveProducts(_allProducts.isNotEmpty ? _allProducts : _localProducts);
+
+    if (!_productsStreamController.isClosed) {
+      _productsStreamController.add(List.unmodifiable(_allProducts.isNotEmpty ? _allProducts : _localProducts));
+    }
     if (_isLocalMode || _client == null) {
       _notifyLocal();
     }
@@ -1255,11 +1720,12 @@ class InventoryService {
           );
         }
       }
+      await LocalCacheService.instance.saveProducts(_localProducts);
       _notifyLocal();
       return;
     }
 
-    // No Supabase, atualiza produtos individualmente para garantir sincronização precisa
+    // Atualiza localmente primeiro
     for (final id in productIds) {
       final pIdx = _allProducts.indexWhere((p) => p.id == id);
       List<String> current = [];
@@ -1273,16 +1739,26 @@ class InventoryService {
         current.remove('outros');
       }
 
-      await _client!
-          .from(AppConstants.tableProducts)
-          .update({'master_categories': current})
-          .eq('id', id);
-
       if (pIdx != -1) {
         _allProducts[pIdx] = _allProducts[pIdx].copyWith(masterCategories: current);
       }
+
+      try {
+        await _client!
+            .from(AppConstants.tableProducts)
+            .update({'master_categories': current})
+            .eq('id', id);
+      } catch (e) {
+        debugPrint('Aviso: falha de rede ao adicionar categoria mestre no Supabase: $e');
+        await LocalCacheService.instance.queueSyncAction({
+          'action_type': 'bulk_add_master_cat',
+          'product_id': id,
+          'master_categories': current,
+        });
+      }
     }
 
+    await LocalCacheService.instance.saveProducts(_allProducts);
     if (!_productsStreamController.isClosed) {
       _productsStreamController.add(List.unmodifiable(_allProducts));
     }
@@ -1316,11 +1792,12 @@ class InventoryService {
           );
         }
       }
+      await LocalCacheService.instance.saveProducts(_localProducts);
       _notifyLocal();
       return;
     }
 
-    // No Supabase:
+    // Atualiza localmente e tenta sincronizar com Supabase
     for (final id in productIds) {
       final pIdx = _allProducts.indexWhere((p) => p.id == id);
       List<String> current = [];
@@ -1332,16 +1809,26 @@ class InventoryService {
         current.add('outros');
       }
 
-      await _client!
-          .from(AppConstants.tableProducts)
-          .update({'master_categories': current})
-          .eq('id', id);
-
       if (pIdx != -1) {
         _allProducts[pIdx] = _allProducts[pIdx].copyWith(masterCategories: current);
       }
+
+      try {
+        await _client!
+            .from(AppConstants.tableProducts)
+            .update({'master_categories': current})
+            .eq('id', id);
+      } catch (e) {
+        debugPrint('Aviso: falha de rede ao remover categoria mestre no Supabase: $e');
+        await LocalCacheService.instance.queueSyncAction({
+          'action_type': 'bulk_remove_master_cat',
+          'product_id': id,
+          'master_categories': current,
+        });
+      }
     }
 
+    await LocalCacheService.instance.saveProducts(_allProducts);
     if (!_productsStreamController.isClosed) {
       _productsStreamController.add(List.unmodifiable(_allProducts));
     }

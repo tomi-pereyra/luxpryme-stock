@@ -56,3 +56,5 @@ lib/data/datasources/luxpryme_initial_data.dart
 *.xlsx
 *.xls
 *.csv
+.luxpryme_cache/
+

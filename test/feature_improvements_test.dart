@@ -3,9 +3,11 @@ import 'package:luxpryme_stock/data/models/product_model.dart';
 import 'package:luxpryme_stock/data/models/category_model.dart';
 import 'package:luxpryme_stock/data/models/master_category_model.dart';
 import 'package:luxpryme_stock/data/models/operator_pin_model.dart';
+import 'package:luxpryme_stock/data/models/stock_conflict_model.dart';
 import 'package:luxpryme_stock/data/models/stock_movement_model.dart';
 import 'package:luxpryme_stock/data/models/cart_item_model.dart';
 import 'package:luxpryme_stock/data/services/inventory_service.dart';
+import 'package:luxpryme_stock/data/services/local_cache_service.dart';
 
 void main() {
   group('Tokenized Unordered Search Tests', () {
@@ -494,6 +496,169 @@ void main() {
           contains('Apenas operadores com PIN Mestre'),
         )),
       );
+    });
+  });
+
+  group('Offline-First LocalCacheService & Conflict Resolution Tests', () {
+    test('LocalCacheService salva e recupera catálogo local de produtos', () async {
+      final cache = LocalCacheService.instance;
+      final testProducts = [
+        ProductModel(
+          id: 'test_offline_1',
+          name: 'Produto Teste Offline 1',
+          categoryIds: ['cat_1'],
+          masterCategories: ['eletronica'],
+          quantity: 45,
+        ),
+        ProductModel(
+          id: 'test_offline_2',
+          name: 'Produto Teste Offline 2',
+          categoryIds: ['cat_2'],
+          masterCategories: ['producao'],
+          quantity: -3,
+        ),
+      ];
+
+      await cache.saveProducts(testProducts);
+      final loaded = await cache.loadProducts();
+
+      expect(loaded, isNotNull);
+      expect(loaded!.length, equals(2));
+      expect(loaded.first.id, equals('test_offline_1'));
+      expect(loaded.first.quantity, equals(45));
+      expect(loaded.last.quantity, equals(-3));
+    });
+
+    test('LocalCacheService gerencia fila offline pendente e limpeza', () async {
+      final cache = LocalCacheService.instance;
+      await cache.clearPendingSyncActions();
+
+      await cache.queueSyncAction({
+        'action_type': 'quick_adjust',
+        'product_id': 'test_p1',
+        'new_quantity': 20,
+      });
+
+      final queue = await cache.loadPendingSyncActions();
+      expect(queue.length, equals(1));
+      expect(queue.first['action_type'], equals('quick_adjust'));
+      expect(queue.first['product_id'], equals('test_p1'));
+
+      await cache.clearPendingSyncActions();
+      final cleared = await cache.loadPendingSyncActions();
+      expect(cleared.isEmpty, isTrue);
+    });
+
+    test('StockConflictModel serializa e deserializa conflito de saldo negativo', () {
+      final conflict = StockConflictModel(
+        id: 'conf_1',
+        productId: 'prod_99',
+        productName: 'Resistor 10k',
+        productCode: 'R10K',
+        internalCode: 'INT-99',
+        currentQuantity: -4,
+        deficitAmount: 4,
+        reason: 'Conflito de sincronização simultânea',
+        detectedAt: DateTime(2026, 11, 17, 10, 0),
+      );
+
+      final map = conflict.toMap();
+      final restored = StockConflictModel.fromMap(map);
+
+      expect(restored.id, equals('conf_1'));
+      expect(restored.productId, equals('prod_99'));
+      expect(restored.currentQuantity, equals(-4));
+      expect(restored.deficitAmount, equals(4));
+    });
+
+    test('InventoryService resolve conflito redefinindo contagem real com PIN Mestre', () async {
+      final service = InventoryService.instance;
+      service.setMode(localMode: true);
+
+      // Produto que ficou com saldo negativo após saídas simultâneas
+      final pConflict = ProductModel(
+        id: 'prod_neg_test',
+        name: 'Componente Conflito Teste',
+        categoryIds: ['cat_1'],
+        masterCategories: ['eletronica'],
+        quantity: -5,
+      );
+
+      // Salva no cache local como ocorreria após sincronização
+      await LocalCacheService.instance.saveProducts([pConflict]);
+
+      // Salva conflito correspondente
+      final conflict = StockConflictModel(
+        id: 'conflict-prod_neg_test',
+        productId: pConflict.id,
+        productName: pConflict.name,
+        currentQuantity: -5,
+        deficitAmount: 5,
+        reason: 'Teste de saldo negativo',
+        detectedAt: DateTime.now(),
+      );
+      await LocalCacheService.instance.saveConflicts([conflict]);
+      await service.initLocalCache();
+
+      expect(service.activeConflicts.any((c) => c.productId == pConflict.id), isTrue);
+
+      // Resolução 1: Informa saldo real de 12 un com PIN Mestre (2026)
+      await service.resolveConflictSetStock(
+        conflictId: conflict.id,
+        productId: pConflict.id,
+        newQuantity: 12,
+        masterPin: '2026',
+        note: 'Contagem física real realizada',
+      );
+
+      // Verifica que o conflito foi removido
+      expect(service.activeConflicts.any((c) => c.productId == pConflict.id), isFalse);
+
+      // Verifica que o saldo foi corrigido para 12
+      final products = await service.fetchProducts();
+      final corrected = products.firstWhere((p) => p.id == pConflict.id);
+      expect(corrected.quantity, equals(12));
+    });
+
+    test('InventoryService rejeita resolução de conflito com PIN não-mestre', () async {
+      final service = InventoryService.instance;
+      service.setMode(localMode: true);
+
+      expect(
+        () => service.resolveConflictSetStock(
+          conflictId: 'fake_conflict',
+          productId: 'fake_prod',
+          newQuantity: 0,
+          masterPin: '1111', // PIN de operador comum, não mestre
+        ),
+        throwsA(isA<Exception>().having(
+          (e) => e.toString(),
+          'message',
+          contains('Apenas operadores com PIN Mestre'),
+        )),
+      );
+    });
+
+    test('InventoryService permite dispensar notificação de conflito', () async {
+      final service = InventoryService.instance;
+      service.setMode(localMode: true);
+
+      final conflict = StockConflictModel(
+        id: 'conflict-to-dismiss',
+        productId: 'prod_disp',
+        productName: 'Item para Dispensar',
+        currentQuantity: -1,
+        deficitAmount: 1,
+        reason: 'Teste de descarte',
+        detectedAt: DateTime.now(),
+      );
+      await LocalCacheService.instance.saveConflicts([conflict]);
+      await service.initLocalCache();
+
+      expect(service.activeConflicts.any((c) => c.id == 'conflict-to-dismiss'), isTrue);
+
+      await service.dismissConflict('conflict-to-dismiss');
+      expect(service.activeConflicts.any((c) => c.id == 'conflict-to-dismiss'), isFalse);
     });
   });
 }

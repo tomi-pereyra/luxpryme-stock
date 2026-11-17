@@ -26,6 +26,9 @@ Future<void> main() async {
   // Define se o serviço opera conectado ao Supabase ou com o Catálogo Local Inicial da Luxpryme
   InventoryService.instance.setMode(localMode: !isConnectedToSupabase);
 
+  // Inicializa o cache persistente em disco (catálogo com 5420+ itens disponível em 0ms)
+  await InventoryService.instance.initLocalCache();
+
   runApp(LuxprymeStockApp(isConnectedToSupabase: isConnectedToSupabase));
 }
 

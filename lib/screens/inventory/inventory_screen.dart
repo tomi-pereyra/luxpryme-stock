@@ -8,6 +8,7 @@ import '../../core/widgets/lux_logo.dart';
 import '../../data/models/category_model.dart';
 import '../../data/models/master_category_model.dart';
 import '../../data/models/product_model.dart';
+import '../../data/models/stock_conflict_model.dart';
 import '../../data/services/cart_service.dart';
 import '../../data/services/inventory_service.dart';
 import '../admin/admin_panel_screen.dart';
@@ -21,6 +22,7 @@ import 'widgets/product_form_dialog.dart';
 import 'widgets/pin_confirmation_dialog.dart';
 import 'widgets/library_mode_screen.dart';
 import 'widgets/batch_add_master_category_dialog.dart';
+import 'widgets/stock_conflict_dialog.dart';
 
 enum SortOption {
   nameAsc('Nome (A - Z)'),
@@ -1028,6 +1030,71 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
               return Column(
                 children: [
+                  // Banner de Alerta para Conflitos de Estoque (Saldo Negativo)
+                  StreamBuilder<List<StockConflictModel>>(
+                    stream: InventoryService.instance.streamStockConflicts(),
+                    builder: (context, conflictSnapshot) {
+                      final conflicts =
+                          conflictSnapshot.data ?? InventoryService.instance.activeConflicts;
+                      if (conflicts.isEmpty) return const SizedBox.shrink();
+
+                      return Container(
+                        margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFFCA5A5), width: 1.2),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.warning_amber_rounded,
+                                color: AppColors.stockZero, size: 22),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'Conflito de Estoque: ${conflicts.length} item(ns) com saldo negativo',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.stockZero,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Retiradas simultâneas geraram déficit. Clique para corrigir.',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.stockZero,
+                                foregroundColor: Colors.white,
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              onPressed: () => StockConflictDialog.show(context, conflicts),
+                              child: Text(
+                                'Resolver',
+                                style: GoogleFonts.inter(
+                                    fontSize: 11, fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+
               // Barra de Seleção de Categoria Mestre Dinâmica
               StreamBuilder<List<MasterCategoryModel>>(
                 stream: InventoryService.instance.streamMasterCategories(),
