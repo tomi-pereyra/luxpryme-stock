@@ -4,7 +4,9 @@ class AppConstants {
 
   static const String appName = 'Estoque Luxpryme';
   static const String appTagline = 'Controle de Estoque Industrial';
-  static const String appVersion = '1.0.0';
+  static const String appVersion = '1.2.0';
+  static const String appDeveloper = 'Tomas Pereyra';
+  static const String appDeveloperRole = 'Desenvolvedor & Administrador';
 
   // Chaves Oficiais do Projeto Supabase Luxpryme
   static const String defaultSupabaseUrl = 'https://kblmdquushszqiqkriqd.supabase.co';

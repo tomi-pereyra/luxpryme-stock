@@ -3,6 +3,7 @@
 **Versão do Sistema:** 1.2.0  
 **Data da Edição:** Novembro de 2026  
 **Empresa:** Luxpryme Indústria Eletrônica  
+**Desenvolvedor e Administrador Geral:** Tomas Pereyra  
 **Ambientes Suportados:** Windows 10/11 (Desktop) e Android 7.0+ (Celulares e Coletores)
 
 ---

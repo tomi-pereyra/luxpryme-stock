@@ -64,7 +64,7 @@ class LuxLogo extends StatelessWidget {
           child: Text(
             'L',
             style: GoogleFonts.montserrat(
-              fontSize: size * 0.62,
+              fontSize: size * 0.50,
               fontWeight: FontWeight.w900,
               color: letterColor,
               letterSpacing: -1.0,

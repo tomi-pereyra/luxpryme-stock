@@ -244,7 +244,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'Sessão autorizada como Administrador: tomibr20@gmail.com',
+                          'Administrador & Desenvolvedor: Tomas Pereyra (tomibr20@gmail.com)',
                           style: GoogleFonts.inter(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,

@@ -812,6 +812,34 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     _openLibraryMode(categories, rawProducts);
                   },
                 ),
+                const Divider(height: 1),
+
+                // 5. Sobre o Sistema
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.info_outline,
+                        color: AppColors.textSecondary),
+                  ),
+                  title: Text(
+                    'Sobre o Aplicativo',
+                    style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w700, fontSize: 14),
+                  ),
+                  subtitle: Text(
+                    '${AppConstants.appDeveloperRole}: ${AppConstants.appDeveloper}',
+                    style: GoogleFonts.inter(
+                        fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showAboutDialog();
+                  },
+                ),
               ],
             ),
           ),
@@ -820,13 +848,71 @@ class _InventoryScreenState extends State<InventoryScreen> {
     );
   }
 
+  void _showAboutDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const LuxLogo(size: 32, variant: LuxLogoVariant.whiteOnBlue, showBrandName: false),
+            const SizedBox(width: 12),
+            Text(
+              AppConstants.appName,
+              style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 18),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              AppConstants.appTagline,
+              style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 12),
+            Text(
+              'Desenvolvedor e Administrador:',
+              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Tomas Pereyra',
+              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.primary),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Versão: ${AppConstants.appVersion}',
+              style: GoogleFonts.inter(fontSize: 13, color: AppColors.textPrimary),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Empresa: Luxpryme Indústria Eletrônica',
+              style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Fechar'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 700;
-    final userEmail = InventoryService.instance.currentUser?.email ??
-        (InventoryService.instance.isLocalMode
-            ? 'Tomas (Supervisor de Eletrônica)'
-            : 'Operador');
 
     return StreamBuilder<List<CategoryModel>>(
       stream: InventoryService.instance.streamCategories(),
@@ -886,7 +972,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                               style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800),
                             ),
                             Text(
-                              'Setor de Eletrônica • $userEmail',
+                              '${AppConstants.appDeveloperRole}: ${AppConstants.appDeveloper}',
                               style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary),
                             ),
                           ],

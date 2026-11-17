@@ -195,7 +195,7 @@ class InventoryService {
     _localPins = [
       OperatorPinModel(
         id: 'pin-1',
-        name: 'Tomas (Supervisor Geral - Acesso Total)',
+        name: 'Tomas Pereyra (Desenvolvedor & Administrador)',
         pin: '2026',
         masterCategory: 'todas',
         isActive: true,
