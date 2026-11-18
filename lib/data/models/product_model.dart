@@ -171,25 +171,49 @@ class ProductModel {
     );
   }
 
-  Map<String, dynamic> toMap() {
-    return {
-      if (id.isNotEmpty) 'id': id,
+  static final RegExp uuidRegex = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  );
+
+  Map<String, dynamic> toMap({bool forDatabaseInsert = false}) {
+    final isValidId = uuidRegex.hasMatch(id);
+    final validCategoryIds = categoryIds.where((c) => uuidRegex.hasMatch(c)).toList();
+    final validCategoryId = (categoryId.isNotEmpty && uuidRegex.hasMatch(categoryId))
+        ? categoryId
+        : (validCategoryIds.isNotEmpty ? validCategoryIds.first : null);
+
+    final map = <String, dynamic>{
       'name': name,
-      if (code != null) 'code': code,
-      if (internalCode != null) 'internal_code': internalCode,
-      if (manufacturerCode != null) 'manufacturer_code': manufacturerCode,
-      if (barcode != null) 'barcode': barcode,
+      if (code != null && code!.isNotEmpty) 'code': code,
+      if (internalCode != null && internalCode!.isNotEmpty) 'internal_code': internalCode,
+      if (manufacturerCode != null && manufacturerCode!.isNotEmpty) 'manufacturer_code': manufacturerCode,
+      if (barcode != null && barcode!.isNotEmpty) 'barcode': barcode,
       'master_categories': masterCategories,
-      'category_ids': categoryIds,
       'subcategories': subcategories,
       if (subcategory != null) 'subcategory': subcategory,
-      // Salva também o primeiro como category_id para compatibilidade
-      if (categoryIds.isNotEmpty) 'category_id': categoryIds.first,
       'quantity': quantity,
       'min_quantity': minQuantity,
-      if (location != null) 'location': location,
-      if (notes != null) 'notes': notes,
+      if (location != null && location!.isNotEmpty) 'location': location,
+      if (notes != null && notes!.isNotEmpty) 'notes': notes,
     };
+
+    if (forDatabaseInsert) {
+      if (isValidId) {
+        map['id'] = id;
+      }
+      if (validCategoryId != null) {
+        map['category_id'] = validCategoryId;
+      }
+      if (validCategoryIds.isNotEmpty) {
+        map['category_ids'] = validCategoryIds;
+      }
+    } else {
+      if (id.isNotEmpty) map['id'] = id;
+      map['category_ids'] = categoryIds;
+      if (categoryIds.isNotEmpty) map['category_id'] = categoryIds.first;
+    }
+
+    return map;
   }
 
   ProductModel copyWith({

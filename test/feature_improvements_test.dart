@@ -677,4 +677,68 @@ void main() {
       expect(service.activeConflicts.any((c) => c.id == 'conflict-to-dismiss'), isFalse);
     });
   });
+
+  group('Product Creation and Persistence Bug Fix Tests', () {
+    test('ProductModel.toMap(forDatabaseInsert: true) filtra IDs não-UUID para o PostgreSQL gerar UUID nativo e evitar erro 22P02', () {
+      final nonUuidProd = ProductModel(
+        id: 'prod-1732688000000',
+        name: 'Placa Central Farol V2',
+        masterCategories: ['eletronica'],
+        categoryIds: ['cat-smd'],
+        quantity: 10,
+      );
+
+      final insertPayload = nonUuidProd.toMap(forDatabaseInsert: true);
+      expect(insertPayload.containsKey('id'), isFalse,
+          reason: 'ID não-UUID deve ser omitido para o PostgreSQL gerar com uuid_generate_v4()');
+
+      final realUuidProd = ProductModel(
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        name: 'Placa Central Farol V2',
+        masterCategories: ['eletronica'],
+        categoryIds: ['cat-smd'],
+        quantity: 10,
+      );
+
+      final realPayload = realUuidProd.toMap(forDatabaseInsert: true);
+      expect(realPayload['id'], equals('123e4567-e89b-12d3-a456-426614174000'));
+    });
+
+    test('ProductModel.toMap(forDatabaseInsert: true) filtra category_ids não-UUID para evitar erro de tipo no PostgreSQL', () {
+      final prodWithLegacyCats = ProductModel(
+        id: '123e4567-e89b-12d3-a456-426614174001',
+        name: 'Resistor 1k SMD',
+        masterCategories: ['eletronica'],
+        categoryIds: ['cat-smd', '987fcdeb-51a2-43f7-9abc-def012345678'],
+        quantity: 50,
+      );
+
+      final payload = prodWithLegacyCats.toMap(forDatabaseInsert: true);
+      final validCatIds = payload['category_ids'] as List;
+      expect(validCatIds.length, equals(1));
+      expect(validCatIds.first, equals('987fcdeb-51a2-43f7-9abc-def012345678'));
+      expect(payload['category_id'], equals('987fcdeb-51a2-43f7-9abc-def012345678'));
+    });
+
+    test('createProduct insere produto e mantém no catálogo local sem sumir', () async {
+      final service = InventoryService.instance;
+      service.setMode(localMode: true);
+
+      final newProd = ProductModel(
+        id: '',
+        name: 'Novo Sensor Luxpryme 2026',
+        internalCode: 'SENS-2026',
+        masterCategories: ['eletronica'],
+        categoryIds: ['cat-smd'],
+        quantity: 25,
+      );
+
+      await service.createProduct(newProd, pin: '2026');
+
+      final products = await service.fetchProducts();
+      final created = products.where((p) => p.name == 'Novo Sensor Luxpryme 2026');
+      expect(created.isNotEmpty, isTrue);
+      expect(created.first.quantity, equals(25));
+    });
+  });
 }

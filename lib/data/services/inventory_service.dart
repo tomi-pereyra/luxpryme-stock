@@ -784,15 +784,25 @@ class InventoryService {
             case 'create_product':
               final productMap = Map<String, dynamic>.from(action['product']);
               final prod = ProductModel.fromMap(productMap);
-              await _client!.from(AppConstants.tableProducts).insert(prod.toMap());
+              await _client!.from(AppConstants.tableProducts).insert(prod.toMap(forDatabaseInsert: true));
               break;
 
             case 'update_product':
               final productMap = Map<String, dynamic>.from(action['product']);
               final prod = ProductModel.fromMap(productMap);
+              final uPayload = prod.toMap();
+              uPayload.remove('id');
+              final validCatIds = prod.categoryIds.where((c) => ProductModel.uuidRegex.hasMatch(c)).toList();
+              if (validCatIds.isNotEmpty) {
+                uPayload['category_ids'] = validCatIds;
+                uPayload['category_id'] = validCatIds.first;
+              } else {
+                uPayload.remove('category_ids');
+                uPayload.remove('category_id');
+              }
               await _client!
                   .from(AppConstants.tableProducts)
-                  .update(prod.toMap())
+                  .update(uPayload)
                   .eq('id', prod.id);
               break;
 
@@ -892,6 +902,14 @@ class InventoryService {
         loaded.addAll(items);
         if (items.length < pageSize) break;
         from += pageSize;
+      }
+
+      // Preserva quaisquer produtos recém-criados localmente ou pendentes de sincronização
+      for (final localP in _allProducts) {
+        if (localP.id.startsWith('prod-') &&
+            !loaded.any((p) => p.name.trim().toLowerCase() == localP.name.trim().toLowerCase())) {
+          loaded.insert(0, localP);
+        }
       }
 
       _allProducts = loaded;
@@ -1070,7 +1088,10 @@ class InventoryService {
 
             if (payload.eventType == PostgresChangeEvent.insert && record.isNotEmpty) {
               final newP = ProductModel.fromMap(record);
-              _allProducts.removeWhere((p) => p.id == newP.id);
+              _allProducts.removeWhere((p) =>
+                  p.id == newP.id ||
+                  (p.id.startsWith('prod-') &&
+                      p.name.trim().toLowerCase() == newP.name.trim().toLowerCase()));
               _allProducts.insert(0, newP);
               _allProducts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
               if (!_productsStreamController.isClosed) {
@@ -1119,33 +1140,24 @@ class InventoryService {
       operatorName = op.name;
     }
 
+    final tempId = product.id.isNotEmpty
+        ? product.id
+        : 'prod-${DateTime.now().millisecondsSinceEpoch}';
+
     final newProduct = product.copyWith(
-      id: product.id.isEmpty
-          ? 'prod-${DateTime.now().millisecondsSinceEpoch}'
-          : product.id,
+      id: tempId,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
     );
 
-    final movement = StockMovementModel(
-      id: 'mov-${DateTime.now().microsecondsSinceEpoch}',
-      productId: newProduct.id,
-      productName: newProduct.name,
-      productCode: newProduct.code,
-      internalCode: newProduct.internalCode,
-      manufacturerCode: newProduct.manufacturerCode,
-      categoryNames: newProduct.categoryNames ?? [],
-      delta: newProduct.quantity,
-      previousQuantity: 0,
-      newQuantity: newProduct.quantity,
-      type: 'PRODUCT_CREATE',
-      operatorName: operatorName,
-      pinUsed: pin != null && pin.isNotEmpty ? '****' : null,
-      createdAt: DateTime.now(),
-    );
-
+    _allProducts.removeWhere((p) => p.id == newProduct.id);
     _allProducts.insert(0, newProduct);
+    _allProducts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    _localProducts.removeWhere((p) => p.id == newProduct.id);
     _localProducts.insert(0, newProduct);
+    _localProducts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
     if (!_productsStreamController.isClosed) {
       _productsStreamController.add(List.unmodifiable(_allProducts));
     }
@@ -1153,21 +1165,79 @@ class InventoryService {
 
     if (_isLocalMode || _client == null) {
       if (newProduct.quantity > 0) {
+        final movement = StockMovementModel(
+          id: 'mov-${DateTime.now().microsecondsSinceEpoch}',
+          productId: newProduct.id,
+          productName: newProduct.name,
+          productCode: newProduct.code,
+          internalCode: newProduct.internalCode,
+          manufacturerCode: newProduct.manufacturerCode,
+          categoryNames: newProduct.categoryNames ?? [],
+          delta: newProduct.quantity,
+          previousQuantity: 0,
+          newQuantity: newProduct.quantity,
+          type: 'PRODUCT_CREATE',
+          operatorName: operatorName,
+          pinUsed: pin != null && pin.isNotEmpty ? '****' : null,
+          createdAt: DateTime.now(),
+        );
         await _recordMovement(movement);
       }
       _notifyLocal();
       return;
     }
 
-    final payload = newProduct.toMap();
+    final payload = newProduct.toMap(forDatabaseInsert: true);
+    ProductModel savedProduct = newProduct;
+
     try {
-      await _client!.from(AppConstants.tableProducts).insert(payload);
+      final res = await _client!
+          .from(AppConstants.tableProducts)
+          .insert(payload)
+          .select()
+          .maybeSingle();
+
+      if (res != null) {
+        savedProduct = ProductModel.fromMap(res, categoryNames: newProduct.categoryNames);
+        _allProducts.removeWhere((p) => p.id == newProduct.id || p.id == savedProduct.id);
+        _allProducts.insert(0, savedProduct);
+        _allProducts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+        _localProducts.removeWhere((p) => p.id == newProduct.id || p.id == savedProduct.id);
+        _localProducts.insert(0, savedProduct);
+        _localProducts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+        await LocalCacheService.instance.saveProducts(_allProducts);
+        if (!_productsStreamController.isClosed) {
+          _productsStreamController.add(List.unmodifiable(_allProducts));
+        }
+      }
     } catch (e) {
+      debugPrint('Aviso ao inserir produto no Supabase (tentando fallback): $e');
       // Fallback gracioso caso a coluna subcategories ainda não exista no Supabase
       if (e.toString().contains('subcategories') || e.toString().contains('PGRST204')) {
         payload.remove('subcategories');
         try {
-          await _client!.from(AppConstants.tableProducts).insert(payload);
+          final res2 = await _client!
+              .from(AppConstants.tableProducts)
+              .insert(payload)
+              .select()
+              .maybeSingle();
+          if (res2 != null) {
+            savedProduct = ProductModel.fromMap(res2, categoryNames: newProduct.categoryNames);
+            _allProducts.removeWhere((p) => p.id == newProduct.id || p.id == savedProduct.id);
+            _allProducts.insert(0, savedProduct);
+            _allProducts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+            _localProducts.removeWhere((p) => p.id == newProduct.id || p.id == savedProduct.id);
+            _localProducts.insert(0, savedProduct);
+            _localProducts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+            await LocalCacheService.instance.saveProducts(_allProducts);
+            if (!_productsStreamController.isClosed) {
+              _productsStreamController.add(List.unmodifiable(_allProducts));
+            }
+          }
         } catch (e2) {
           if (e2.toString().contains('subcategory') || e2.toString().contains('PGRST204')) {
             payload.remove('subcategory');
@@ -1182,7 +1252,26 @@ class InventoryService {
                 : '$cleanNotes$tag';
 
             try {
-              await _client!.from(AppConstants.tableProducts).insert(payload);
+              final res3 = await _client!
+                  .from(AppConstants.tableProducts)
+                  .insert(payload)
+                  .select()
+                  .maybeSingle();
+              if (res3 != null) {
+                savedProduct = ProductModel.fromMap(res3, categoryNames: newProduct.categoryNames);
+                _allProducts.removeWhere((p) => p.id == newProduct.id || p.id == savedProduct.id);
+                _allProducts.insert(0, savedProduct);
+                _allProducts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+                _localProducts.removeWhere((p) => p.id == newProduct.id || p.id == savedProduct.id);
+                _localProducts.insert(0, savedProduct);
+                _localProducts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+                await LocalCacheService.instance.saveProducts(_allProducts);
+                if (!_productsStreamController.isClosed) {
+                  _productsStreamController.add(List.unmodifiable(_allProducts));
+                }
+              }
             } catch (e3) {
               debugPrint('Aviso: offline ao criar produto, enfileirando: $e3');
               await LocalCacheService.instance.queueSyncAction({
@@ -1207,7 +1296,23 @@ class InventoryService {
       }
     }
 
-    if (newProduct.quantity > 0) {
+    if (savedProduct.quantity > 0) {
+      final movement = StockMovementModel(
+        id: 'mov-${DateTime.now().microsecondsSinceEpoch}',
+        productId: savedProduct.id,
+        productName: savedProduct.name,
+        productCode: savedProduct.code,
+        internalCode: savedProduct.internalCode,
+        manufacturerCode: savedProduct.manufacturerCode,
+        categoryNames: savedProduct.categoryNames ?? [],
+        delta: savedProduct.quantity,
+        previousQuantity: 0,
+        newQuantity: savedProduct.quantity,
+        type: 'PRODUCT_CREATE',
+        operatorName: operatorName,
+        pinUsed: pin != null && pin.isNotEmpty ? '****' : null,
+        createdAt: DateTime.now(),
+      );
       await _recordMovement(movement);
     }
   }
@@ -1237,6 +1342,16 @@ class InventoryService {
     }
 
     final payload = updated.toMap();
+    payload.remove('id');
+    final validCatIds = updated.categoryIds.where((c) => ProductModel.uuidRegex.hasMatch(c)).toList();
+    if (validCatIds.isNotEmpty) {
+      payload['category_ids'] = validCatIds;
+      payload['category_id'] = validCatIds.first;
+    } else {
+      payload.remove('category_ids');
+      payload.remove('category_id');
+    }
+
     try {
       await _client!
           .from(AppConstants.tableProducts)
