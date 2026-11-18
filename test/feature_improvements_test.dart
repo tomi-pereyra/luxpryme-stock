@@ -740,5 +740,46 @@ void main() {
       expect(created.isNotEmpty, isTrue);
       expect(created.first.quantity, equals(25));
     });
+
+    test('updateProduct e quickAdjustUnit atualizam catálogo local instantaneamente (0ms)', () async {
+      final service = InventoryService.instance;
+      service.setMode(localMode: true);
+
+      final testProd = ProductModel(
+        id: 'prod-local-instant-1',
+        name: 'Componente Instantaneo Teste',
+        internalCode: 'INST-001',
+        masterCategories: ['eletronica'],
+        categoryIds: ['cat-smd'],
+        quantity: 10,
+      );
+
+      await service.createProduct(testProd, pin: '2026');
+
+      // Update product instantâneo
+      final updatedProd = testProd.copyWith(name: 'Componente Modificado Instantaneo', quantity: 15);
+      await service.updateProduct(updatedProd);
+
+      var products = await service.fetchProducts();
+      var found = products.firstWhere((p) => p.id == 'prod-local-instant-1');
+      expect(found.name, equals('Componente Modificado Instantaneo'));
+      expect(found.quantity, equals(15));
+
+      // Quick adjust unit (+1 / -1)
+      await service.quickAdjustUnit(product: found, delta: 1, pin: '2026');
+      products = await service.fetchProducts();
+      found = products.firstWhere((p) => p.id == 'prod-local-instant-1');
+      expect(found.quantity, equals(16));
+    });
+
+    test('validatePin valida PIN localmente a partir da memória/cache em 0ms', () async {
+      final service = InventoryService.instance;
+      final op = await service.validatePin('2026');
+      expect(op, isNotNull);
+      expect(op!.isMasterPin, isTrue);
+
+      final invalid = await service.validatePin('9999');
+      expect(invalid, isNull);
+    });
   });
 }

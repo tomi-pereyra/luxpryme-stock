@@ -544,26 +544,34 @@ class InventoryService {
       isSystemDefault: false,
     );
 
-    if (!_isLocalMode && _client != null) {
-      try {
-        await _client!.from(AppConstants.tableMasterCategories).insert({
-          'id': id,
-          'name': cleanName,
-          if (newMaster.description != null) 'description': newMaster.description,
-          if (newMaster.colorHex != null) 'color': newMaster.colorHex,
-          if (newMaster.iconName != null) 'icon': newMaster.iconName,
-        });
-      } catch (e) {
-        debugPrint('Aviso ao inserir master_category no Supabase: $e');
-      }
-    }
-
+    // Atualiza memória e persistência local imediatamente (0ms)
     _masterCategories.add(newMaster);
     _saveMasterCategoriesLocal();
     if (!_masterCategoriesStreamController.isClosed) {
       _masterCategoriesStreamController.add(List.unmodifiable(_masterCategories));
     }
+
+    // Sincronização em segundo plano com o Supabase
+    if (!_isLocalMode && _client != null) {
+      unawaited(_backgroundSyncCreateMasterCategory(newMaster));
+    }
+
     return newMaster;
+  }
+
+  Future<void> _backgroundSyncCreateMasterCategory(MasterCategoryModel newMaster) async {
+    if (_client == null || _isLocalMode) return;
+    try {
+      await _client!.from(AppConstants.tableMasterCategories).insert({
+        'id': newMaster.id,
+        'name': newMaster.name,
+        if (newMaster.description != null) 'description': newMaster.description,
+        if (newMaster.colorHex != null) 'color': newMaster.colorHex,
+        if (newMaster.iconName != null) 'icon': newMaster.iconName,
+      });
+    } catch (e) {
+      debugPrint('Aviso ao inserir master_category no Supabase em segundo plano: $e');
+    }
   }
 
   Future<MasterCategoryModel> updateMasterCategory({
@@ -603,25 +611,33 @@ class InventoryService {
       iconName: iconName ?? existing.iconName,
     );
 
-    if (!_isLocalMode && _client != null) {
-      try {
-        await _client!.from(AppConstants.tableMasterCategories).update({
-          'name': updated.name,
-          'description': updated.description,
-          'color': updated.colorHex,
-          'icon': updated.iconName,
-        }).eq('id', id);
-      } catch (e) {
-        debugPrint('Aviso ao atualizar master_category no Supabase: $e');
-      }
-    }
-
+    // Atualiza imediatamente localmente (0ms)
     _masterCategories[index] = updated;
     _saveMasterCategoriesLocal();
     if (!_masterCategoriesStreamController.isClosed) {
       _masterCategoriesStreamController.add(List.unmodifiable(_masterCategories));
     }
+
+    // Sincronização em segundo plano com o Supabase
+    if (!_isLocalMode && _client != null) {
+      unawaited(_backgroundSyncUpdateMasterCategory(updated));
+    }
+
     return updated;
+  }
+
+  Future<void> _backgroundSyncUpdateMasterCategory(MasterCategoryModel updated) async {
+    if (_client == null || _isLocalMode) return;
+    try {
+      await _client!.from(AppConstants.tableMasterCategories).update({
+        'name': updated.name,
+        'description': updated.description,
+        'color': updated.colorHex,
+        'icon': updated.iconName,
+      }).eq('id', updated.id);
+    } catch (e) {
+      debugPrint('Aviso ao atualizar master_category no Supabase em segundo plano: $e');
+    }
   }
 
   Future<void> deleteMasterCategory({
@@ -670,27 +686,31 @@ class InventoryService {
         _localPins[i] = _localPins[i].copyWith(masterCategory: 'outros');
       }
     }
-    if (!_isLocalMode && _client != null) {
-      try {
-        await _client!
-            .from('operator_pins')
-            .update({'master_category': 'outros'})
-            .eq('master_category', lowerId);
-      } catch (_) {}
-    }
-
-    if (!_isLocalMode && _client != null) {
-      try {
-        await _client!.from(AppConstants.tableMasterCategories).delete().eq('id', id);
-      } catch (e) {
-        debugPrint('Aviso ao remover master_category do Supabase: $e');
-      }
-    }
 
     _masterCategories.removeWhere((mc) => mc.id.toLowerCase() == lowerId);
     _saveMasterCategoriesLocal();
     if (!_masterCategoriesStreamController.isClosed) {
       _masterCategoriesStreamController.add(List.unmodifiable(_masterCategories));
+    }
+
+    if (!_isLocalMode && _client != null) {
+      unawaited(_backgroundSyncDeleteMasterCategory(id, lowerId));
+    }
+  }
+
+  Future<void> _backgroundSyncDeleteMasterCategory(String id, String lowerId) async {
+    if (_client == null || _isLocalMode) return;
+    try {
+      await _client!
+          .from('operator_pins')
+          .update({'master_category': 'outros'})
+          .eq('master_category', lowerId);
+    } catch (_) {}
+
+    try {
+      await _client!.from(AppConstants.tableMasterCategories).delete().eq('id', id);
+    } catch (e) {
+      debugPrint('Aviso ao remover master_category do Supabase em segundo plano: $e');
     }
   }
 
@@ -1027,26 +1047,35 @@ class InventoryService {
 
     await _recordMovement(movement);
 
-    if (!_isLocalMode && _client != null) {
-      try {
-        await _client!
-            .from(AppConstants.tableProducts)
-            .update({'quantity': newQuantity})
-            .eq('id', productId);
-      } catch (e) {
-        await LocalCacheService.instance.queueSyncAction({
-          'action_type': 'resolve_conflict',
-          'product_id': productId,
-          'quantity': newQuantity,
-          'movement': movement.toMap(),
-        });
-      }
-    }
-
     _conflicts.removeWhere((c) => c.id == conflictId || c.productId == productId);
     await LocalCacheService.instance.saveConflicts(_conflicts);
     if (!_conflictsStreamController.isClosed) {
       _conflictsStreamController.add(List.unmodifiable(_conflicts));
+    }
+
+    if (!_isLocalMode && _client != null) {
+      unawaited(_backgroundSyncResolveConflict(productId, newQuantity, movement));
+    }
+  }
+
+  Future<void> _backgroundSyncResolveConflict(
+    String productId,
+    int newQuantity,
+    StockMovementModel movement,
+  ) async {
+    if (_client == null || _isLocalMode) return;
+    try {
+      await _client!
+          .from(AppConstants.tableProducts)
+          .update({'quantity': newQuantity})
+          .eq('id', productId);
+    } catch (e) {
+      await LocalCacheService.instance.queueSyncAction({
+        'action_type': 'resolve_conflict',
+        'product_id': productId,
+        'quantity': newQuantity,
+        'movement': movement.toMap(),
+      });
     }
   }
 
@@ -1163,32 +1192,47 @@ class InventoryService {
     }
     await LocalCacheService.instance.saveProducts(_allProducts);
 
+    StockMovementModel? initialMovement;
+    if (newProduct.quantity > 0) {
+      initialMovement = StockMovementModel(
+        id: 'mov-${DateTime.now().microsecondsSinceEpoch}',
+        productId: newProduct.id,
+        productName: newProduct.name,
+        productCode: newProduct.code,
+        internalCode: newProduct.internalCode,
+        manufacturerCode: newProduct.manufacturerCode,
+        categoryNames: newProduct.categoryNames ?? [],
+        delta: newProduct.quantity,
+        previousQuantity: 0,
+        newQuantity: newProduct.quantity,
+        type: 'PRODUCT_CREATE',
+        operatorName: operatorName,
+        pinUsed: pin != null && pin.isNotEmpty ? '****' : null,
+        createdAt: DateTime.now(),
+      );
+      await _recordMovement(initialMovement);
+    }
+
     if (_isLocalMode || _client == null) {
-      if (newProduct.quantity > 0) {
-        final movement = StockMovementModel(
-          id: 'mov-${DateTime.now().microsecondsSinceEpoch}',
-          productId: newProduct.id,
-          productName: newProduct.name,
-          productCode: newProduct.code,
-          internalCode: newProduct.internalCode,
-          manufacturerCode: newProduct.manufacturerCode,
-          categoryNames: newProduct.categoryNames ?? [],
-          delta: newProduct.quantity,
-          previousQuantity: 0,
-          newQuantity: newProduct.quantity,
-          type: 'PRODUCT_CREATE',
-          operatorName: operatorName,
-          pinUsed: pin != null && pin.isNotEmpty ? '****' : null,
-          createdAt: DateTime.now(),
-        );
-        await _recordMovement(movement);
-      }
       _notifyLocal();
       return;
     }
 
+    // Dispara a sincronização com o Supabase em segundo plano sem travar a interface
+    unawaited(_backgroundSyncCreateProduct(newProduct, initialMovement, operatorName, pin));
+  }
+
+  Future<void> _backgroundSyncCreateProduct(
+    ProductModel newProduct,
+    StockMovementModel? initialMovement,
+    String operatorName,
+    String? pin,
+  ) async {
+    if (_client == null || _isLocalMode) return;
+
     final payload = newProduct.toMap(forDatabaseInsert: true);
     ProductModel savedProduct = newProduct;
+    bool inserted = false;
 
     try {
       final res = await _client!
@@ -1199,21 +1243,10 @@ class InventoryService {
 
       if (res != null) {
         savedProduct = ProductModel.fromMap(res, categoryNames: newProduct.categoryNames);
-        _allProducts.removeWhere((p) => p.id == newProduct.id || p.id == savedProduct.id);
-        _allProducts.insert(0, savedProduct);
-        _allProducts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-
-        _localProducts.removeWhere((p) => p.id == newProduct.id || p.id == savedProduct.id);
-        _localProducts.insert(0, savedProduct);
-        _localProducts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-
-        await LocalCacheService.instance.saveProducts(_allProducts);
-        if (!_productsStreamController.isClosed) {
-          _productsStreamController.add(List.unmodifiable(_allProducts));
-        }
+        inserted = true;
       }
     } catch (e) {
-      debugPrint('Aviso ao inserir produto no Supabase (tentando fallback): $e');
+      debugPrint('Aviso ao inserir produto no Supabase em segundo plano (tentando fallback): $e');
       // Fallback gracioso caso a coluna subcategories ainda não exista no Supabase
       if (e.toString().contains('subcategories') || e.toString().contains('PGRST204')) {
         payload.remove('subcategories');
@@ -1225,18 +1258,7 @@ class InventoryService {
               .maybeSingle();
           if (res2 != null) {
             savedProduct = ProductModel.fromMap(res2, categoryNames: newProduct.categoryNames);
-            _allProducts.removeWhere((p) => p.id == newProduct.id || p.id == savedProduct.id);
-            _allProducts.insert(0, savedProduct);
-            _allProducts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-
-            _localProducts.removeWhere((p) => p.id == newProduct.id || p.id == savedProduct.id);
-            _localProducts.insert(0, savedProduct);
-            _localProducts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-
-            await LocalCacheService.instance.saveProducts(_allProducts);
-            if (!_productsStreamController.isClosed) {
-              _productsStreamController.add(List.unmodifiable(_allProducts));
-            }
+            inserted = true;
           }
         } catch (e2) {
           if (e2.toString().contains('subcategory') || e2.toString().contains('PGRST204')) {
@@ -1259,18 +1281,7 @@ class InventoryService {
                   .maybeSingle();
               if (res3 != null) {
                 savedProduct = ProductModel.fromMap(res3, categoryNames: newProduct.categoryNames);
-                _allProducts.removeWhere((p) => p.id == newProduct.id || p.id == savedProduct.id);
-                _allProducts.insert(0, savedProduct);
-                _allProducts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-
-                _localProducts.removeWhere((p) => p.id == newProduct.id || p.id == savedProduct.id);
-                _localProducts.insert(0, savedProduct);
-                _localProducts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-
-                await LocalCacheService.instance.saveProducts(_allProducts);
-                if (!_productsStreamController.isClosed) {
-                  _productsStreamController.add(List.unmodifiable(_allProducts));
-                }
+                inserted = true;
               }
             } catch (e3) {
               debugPrint('Aviso: offline ao criar produto, enfileirando: $e3');
@@ -1296,24 +1307,24 @@ class InventoryService {
       }
     }
 
-    if (savedProduct.quantity > 0) {
-      final movement = StockMovementModel(
-        id: 'mov-${DateTime.now().microsecondsSinceEpoch}',
-        productId: savedProduct.id,
-        productName: savedProduct.name,
-        productCode: savedProduct.code,
-        internalCode: savedProduct.internalCode,
-        manufacturerCode: savedProduct.manufacturerCode,
-        categoryNames: savedProduct.categoryNames ?? [],
-        delta: savedProduct.quantity,
-        previousQuantity: 0,
-        newQuantity: savedProduct.quantity,
-        type: 'PRODUCT_CREATE',
-        operatorName: operatorName,
-        pinUsed: pin != null && pin.isNotEmpty ? '****' : null,
-        createdAt: DateTime.now(),
-      );
-      await _recordMovement(movement);
+    if (inserted) {
+      _allProducts.removeWhere((p) => p.id == newProduct.id || p.id == savedProduct.id);
+      _allProducts.insert(0, savedProduct);
+      _allProducts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+      _localProducts.removeWhere((p) => p.id == newProduct.id || p.id == savedProduct.id);
+      _localProducts.insert(0, savedProduct);
+      _localProducts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+      await LocalCacheService.instance.saveProducts(_allProducts);
+      if (!_productsStreamController.isClosed) {
+        _productsStreamController.add(List.unmodifiable(_allProducts));
+      }
+
+      if (initialMovement != null && savedProduct.id != newProduct.id) {
+        final reconciledMovement = initialMovement.copyWith(productId: savedProduct.id);
+        _recordMovement(reconciledMovement);
+      }
     }
   }
 
@@ -1341,6 +1352,13 @@ class InventoryService {
       return;
     }
 
+    // Executa a atualização no Supabase em segundo plano
+    unawaited(_backgroundSyncUpdateProduct(updated));
+  }
+
+  Future<void> _backgroundSyncUpdateProduct(ProductModel updated) async {
+    if (_client == null || _isLocalMode) return;
+
     final payload = updated.toMap();
     payload.remove('id');
     final validCatIds = updated.categoryIds.where((c) => ProductModel.uuidRegex.hasMatch(c)).toList();
@@ -1356,7 +1374,7 @@ class InventoryService {
       await _client!
           .from(AppConstants.tableProducts)
           .update(payload)
-          .eq('id', product.id);
+          .eq('id', updated.id);
     } catch (e) {
       // Fallback gracioso caso a coluna subcategories ainda não exista no Supabase
       if (e.toString().contains('subcategories') || e.toString().contains('PGRST204')) {
@@ -1365,7 +1383,7 @@ class InventoryService {
           await _client!
               .from(AppConstants.tableProducts)
               .update(payload)
-              .eq('id', product.id);
+              .eq('id', updated.id);
         } catch (e2) {
           if (e2.toString().contains('subcategory') || e2.toString().contains('PGRST204')) {
             payload.remove('subcategory');
@@ -1383,7 +1401,7 @@ class InventoryService {
               await _client!
                   .from(AppConstants.tableProducts)
                   .update(payload)
-                  .eq('id', product.id);
+                  .eq('id', updated.id);
             } catch (e3) {
               await LocalCacheService.instance.queueSyncAction({
                 'action_type': 'update_product',
@@ -1463,13 +1481,18 @@ class InventoryService {
       return;
     }
 
+    unawaited(_backgroundSyncDeleteProduct(productId));
+  }
+
+  Future<void> _backgroundSyncDeleteProduct(String productId) async {
+    if (_client == null || _isLocalMode) return;
     try {
       await _client!
           .from(AppConstants.tableProducts)
           .delete()
           .eq('id', productId);
     } catch (e) {
-      debugPrint('Aviso: offline ao deletar produto, enfileirando: $e');
+      debugPrint('Aviso: offline ao deletar produto em segundo plano, enfileirando: $e');
       await LocalCacheService.instance.queueSyncAction({
         'action_type': 'delete_product',
         'product_id': productId,
@@ -1551,23 +1574,32 @@ class InventoryService {
       return newQuantity;
     }
 
-    // Supabase com fallback offline resiliente
+    // Supabase em segundo plano
+    unawaited(_backgroundSyncQuickAdjust(product.id, newQuantity, movement));
+
+    return newQuantity;
+  }
+
+  Future<void> _backgroundSyncQuickAdjust(
+    String productId,
+    int newQuantity,
+    StockMovementModel movement,
+  ) async {
+    if (_client == null || _isLocalMode) return;
     try {
       await _client!
           .from(AppConstants.tableProducts)
           .update({'quantity': newQuantity})
-          .eq('id', product.id);
+          .eq('id', productId);
     } catch (e) {
-      debugPrint('Aviso: falha de rede no ajuste unitário, enfileirando ação offline: $e');
+      debugPrint('Aviso: falha de rede no ajuste unitário em segundo plano, enfileirando ação offline: $e');
       await LocalCacheService.instance.queueSyncAction({
         'action_type': 'quick_adjust',
-        'product_id': product.id,
+        'product_id': productId,
         'new_quantity': newQuantity,
         'movement': movement.toMap(),
       });
     }
-
-    return newQuantity;
   }
 
   /// Método de ajuste direto com registro no histórico e validação de PIN
@@ -1608,25 +1640,36 @@ class InventoryService {
     final cleanPin = pin.trim();
     if (cleanPin.length != 4) return null;
 
+    // 1. Sempre verifica o cache em memória local primeiro (resposta instantânea 0ms)
+    try {
+      final local = _localPins.firstWhere(
+        (p) => p.pin == cleanPin && p.isActive,
+      );
+      return local;
+    } catch (_) {}
+
     if (_isLocalMode || _client == null) {
-      try {
-        return _localPins.firstWhere(
-          (p) => p.pin == cleanPin && p.isActive,
-        );
-      } catch (_) {
-        return null;
-      }
+      return null;
     }
 
-    final res = await _client!
-        .from('operator_pins')
-        .select()
-        .eq('pin', cleanPin)
-        .eq('is_active', true)
-        .maybeSingle();
+    // 2. Se não encontrou no cache local mas está online, busca no Supabase e atualiza o cache
+    try {
+      final res = await _client!
+          .from('operator_pins')
+          .select()
+          .eq('pin', cleanPin)
+          .eq('is_active', true)
+          .maybeSingle();
 
-    if (res == null) return null;
-    return OperatorPinModel.fromMap(res);
+      if (res == null) return null;
+      final op = OperatorPinModel.fromMap(res);
+      _localPins.removeWhere((p) => p.id == op.id || p.pin == op.pin);
+      _localPins.add(op);
+      LocalCacheService.instance.savePins(_localPins);
+      return op;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> checkoutCart({
@@ -1656,6 +1699,8 @@ class InventoryService {
     }
 
     final now = DateTime.now();
+    final List<Map<String, dynamic>> syncItems = [];
+    final List<StockMovementModel> movements = [];
 
     for (var item in cartItems) {
       final currentStock = item.product.quantity;
@@ -1686,6 +1731,13 @@ class InventoryService {
         createdAt: now,
       );
 
+      movements.add(movement);
+      syncItems.add({
+        'product_id': item.product.id,
+        'new_quantity': newStock,
+        'movement': movement.toMap(),
+      });
+
       // Atualiza memória local imediatamente
       final idx = _localProducts.indexWhere((p) => p.id == item.product.id);
       if (idx != -1) {
@@ -1703,23 +1755,6 @@ class InventoryService {
       }
 
       await _recordMovement(movement);
-
-      if (!_isLocalMode && _client != null) {
-        try {
-          await _client!
-              .from(AppConstants.tableProducts)
-              .update({'quantity': newStock})
-              .eq('id', item.product.id);
-        } catch (e) {
-          debugPrint('Aviso: falha ao sincronizar item do carrinho ($e), enfileirando offline.');
-          await LocalCacheService.instance.queueSyncAction({
-            'action_type': 'quick_adjust',
-            'product_id': item.product.id,
-            'new_quantity': newStock,
-            'movement': movement.toMap(),
-          });
-        }
-      }
     }
 
     await LocalCacheService.instance.saveProducts(_allProducts.isNotEmpty ? _allProducts : _localProducts);
@@ -1729,6 +1764,34 @@ class InventoryService {
     }
     if (_isLocalMode || _client == null) {
       _notifyLocal();
+      return;
+    }
+
+    // Sincronização com Supabase totalmente em segundo plano
+    unawaited(_backgroundSyncCheckoutCart(syncItems));
+  }
+
+  Future<void> _backgroundSyncCheckoutCart(List<Map<String, dynamic>> syncItems) async {
+    if (_client == null || _isLocalMode) return;
+    for (final it in syncItems) {
+      final productId = it['product_id']?.toString();
+      final newQuantity = it['new_quantity'] as int?;
+      if (productId != null && newQuantity != null) {
+        try {
+          await _client!
+              .from(AppConstants.tableProducts)
+              .update({'quantity': newQuantity})
+              .eq('id', productId);
+        } catch (e) {
+          debugPrint('Aviso: falha ao sincronizar item do carrinho em segundo plano ($e), enfileirando offline.');
+          await LocalCacheService.instance.queueSyncAction({
+            'action_type': 'quick_adjust',
+            'product_id': productId,
+            'new_quantity': newQuantity,
+            if (it['movement'] != null) 'movement': it['movement'],
+          });
+        }
+      }
     }
   }
 
@@ -1818,29 +1881,8 @@ class InventoryService {
     }
 
     final catId = targetMasterCategoryId.toLowerCase().trim();
-    if (_isLocalMode || _client == null) {
-      for (final id in productIds) {
-        final index = _localProducts.indexWhere((p) => p.id == id);
-        if (index != -1) {
-          final current = List<String>.from(_localProducts[index].masterCategories);
-          if (!current.contains(catId)) {
-            current.add(catId);
-          }
-          if (catId != 'outros' && current.contains('outros')) {
-            current.remove('outros');
-          }
-          _localProducts[index] = _localProducts[index].copyWith(
-            masterCategories: current,
-            updatedAt: DateTime.now(),
-          );
-        }
-      }
-      await LocalCacheService.instance.saveProducts(_localProducts);
-      _notifyLocal();
-      return;
-    }
+    final Map<String, List<String>> updatedMap = {};
 
-    // Atualiza localmente primeiro
     for (final id in productIds) {
       final pIdx = _allProducts.indexWhere((p) => p.id == id);
       List<String> current = [];
@@ -1857,26 +1899,25 @@ class InventoryService {
       if (pIdx != -1) {
         _allProducts[pIdx] = _allProducts[pIdx].copyWith(masterCategories: current);
       }
-
-      try {
-        await _client!
-            .from(AppConstants.tableProducts)
-            .update({'master_categories': current})
-            .eq('id', id);
-      } catch (e) {
-        debugPrint('Aviso: falha de rede ao adicionar categoria mestre no Supabase: $e');
-        await LocalCacheService.instance.queueSyncAction({
-          'action_type': 'bulk_add_master_cat',
-          'product_id': id,
-          'master_categories': current,
-        });
+      final lIdx = _localProducts.indexWhere((p) => p.id == id);
+      if (lIdx != -1) {
+        _localProducts[lIdx] = _localProducts[lIdx].copyWith(masterCategories: current);
       }
+      updatedMap[id] = current;
     }
 
-    await LocalCacheService.instance.saveProducts(_allProducts);
+    await LocalCacheService.instance.saveProducts(_allProducts.isNotEmpty ? _allProducts : _localProducts);
     if (!_productsStreamController.isClosed) {
-      _productsStreamController.add(List.unmodifiable(_allProducts));
+      _productsStreamController.add(List.unmodifiable(_allProducts.isNotEmpty ? _allProducts : _localProducts));
     }
+
+    if (_isLocalMode || _client == null) {
+      _notifyLocal();
+      return;
+    }
+
+    // Sincronização com Supabase em segundo plano
+    unawaited(_backgroundSyncBulkMasterCategory(updatedMap, 'bulk_add_master_cat'));
   }
 
   Future<void> bulkRemoveProductsFromMasterCategory({
@@ -1892,27 +1933,8 @@ class InventoryService {
     }
 
     final catId = targetMasterCategoryId.toLowerCase().trim();
-    if (_isLocalMode || _client == null) {
-      for (final id in productIds) {
-        final index = _localProducts.indexWhere((p) => p.id == id);
-        if (index != -1) {
-          final current = List<String>.from(_localProducts[index].masterCategories);
-          current.remove(catId);
-          if (current.isEmpty) {
-            current.add('outros');
-          }
-          _localProducts[index] = _localProducts[index].copyWith(
-            masterCategories: current,
-            updatedAt: DateTime.now(),
-          );
-        }
-      }
-      await LocalCacheService.instance.saveProducts(_localProducts);
-      _notifyLocal();
-      return;
-    }
+    final Map<String, List<String>> updatedMap = {};
 
-    // Atualiza localmente e tenta sincronizar com Supabase
     for (final id in productIds) {
       final pIdx = _allProducts.indexWhere((p) => p.id == id);
       List<String> current = [];
@@ -1927,25 +1949,46 @@ class InventoryService {
       if (pIdx != -1) {
         _allProducts[pIdx] = _allProducts[pIdx].copyWith(masterCategories: current);
       }
+      final lIdx = _localProducts.indexWhere((p) => p.id == id);
+      if (lIdx != -1) {
+        _localProducts[lIdx] = _localProducts[lIdx].copyWith(masterCategories: current);
+      }
+      updatedMap[id] = current;
+    }
 
+    await LocalCacheService.instance.saveProducts(_allProducts.isNotEmpty ? _allProducts : _localProducts);
+    if (!_productsStreamController.isClosed) {
+      _productsStreamController.add(List.unmodifiable(_allProducts.isNotEmpty ? _allProducts : _localProducts));
+    }
+
+    if (_isLocalMode || _client == null) {
+      _notifyLocal();
+      return;
+    }
+
+    // Sincronização com Supabase em segundo plano
+    unawaited(_backgroundSyncBulkMasterCategory(updatedMap, 'bulk_remove_master_cat'));
+  }
+
+  Future<void> _backgroundSyncBulkMasterCategory(
+    Map<String, List<String>> updatedMap,
+    String actionType,
+  ) async {
+    if (_client == null || _isLocalMode) return;
+    for (final entry in updatedMap.entries) {
       try {
         await _client!
             .from(AppConstants.tableProducts)
-            .update({'master_categories': current})
-            .eq('id', id);
+            .update({'master_categories': entry.value})
+            .eq('id', entry.key);
       } catch (e) {
-        debugPrint('Aviso: falha de rede ao remover categoria mestre no Supabase: $e');
+        debugPrint('Aviso: falha de rede ao sincronizar setor em lote no Supabase em segundo plano: $e');
         await LocalCacheService.instance.queueSyncAction({
-          'action_type': 'bulk_remove_master_cat',
-          'product_id': id,
-          'master_categories': current,
+          'action_type': actionType,
+          'product_id': entry.key,
+          'master_categories': entry.value,
         });
       }
-    }
-
-    await LocalCacheService.instance.saveProducts(_allProducts);
-    if (!_productsStreamController.isClosed) {
-      _productsStreamController.add(List.unmodifiable(_allProducts));
     }
   }
 
@@ -1964,70 +2007,75 @@ class InventoryService {
   // ---------------------------------------------------------------------------
 
   Future<void> _recordMovement(StockMovementModel movement) async {
-    // 1. Sempre atualiza a memória local imediatamente (resposta instantânea na UI)
+    // 1. Sempre atualiza a memória local imediatamente (resposta instantânea na UI 0ms)
     _localMovements.removeWhere((m) => m.id.isNotEmpty && m.id == movement.id);
     _localMovements.insert(0, movement);
     if (!_movementsStreamController.isClosed) {
       _movementsStreamController.add(List.unmodifiable(_localMovements));
     }
 
-    // 2. Se conectado ao Supabase, grava no banco com payload seguro
+    // 2. Se conectado ao Supabase, grava no banco em segundo plano sem travar a interface
     if (!_isLocalMode && _client != null) {
+      unawaited(_backgroundSyncMovement(movement));
+    }
+  }
+
+  Future<void> _backgroundSyncMovement(StockMovementModel movement) async {
+    if (_client == null || _isLocalMode) return;
+    try {
+      final payload = movement.toMap(forDatabaseInsert: true);
+      final res = await _client!
+          .from('stock_movements')
+          .insert(payload)
+          .select()
+          .maybeSingle();
+
+      if (res != null) {
+        final serverMovement = StockMovementModel.fromMap(res);
+        final idx = _localMovements.indexWhere((m) => m.id == movement.id);
+        final merged = serverMovement.copyWith(
+          notes: serverMovement.notes ?? movement.notes,
+        );
+        if (idx != -1) {
+          _localMovements[idx] = merged;
+        } else {
+          _localMovements.insert(0, merged);
+        }
+        if (!_movementsStreamController.isClosed) {
+          _movementsStreamController.add(List.unmodifiable(_localMovements));
+        }
+      }
+    } catch (e) {
+      debugPrint('Aviso: falha ao gravar stock_movements no Supabase em segundo plano: $e');
+      // Fallback defensivo: se falhar com notes ou product_id (por FK, tipo UUID ou coluna inexistente)
       try {
-        final payload = movement.toMap(forDatabaseInsert: true);
+        final fallbackPayload = movement.toMap(forDatabaseInsert: true);
+        if (e.toString().contains('notes') ||
+            e.toString().contains('42703') ||
+            e.toString().contains('PGRST204')) {
+          fallbackPayload.remove('notes');
+        }
+        fallbackPayload['product_id'] = null;
         final res = await _client!
             .from('stock_movements')
-            .insert(payload)
+            .insert(fallbackPayload)
             .select()
             .maybeSingle();
-
         if (res != null) {
           final serverMovement = StockMovementModel.fromMap(res);
-          final idx = _localMovements.indexOf(movement);
+          final idx = _localMovements.indexWhere((m) => m.id == movement.id);
           final merged = serverMovement.copyWith(
             notes: serverMovement.notes ?? movement.notes,
           );
           if (idx != -1) {
             _localMovements[idx] = merged;
-          } else {
-            _localMovements.insert(0, merged);
-          }
-          if (!_movementsStreamController.isClosed) {
-            _movementsStreamController.add(List.unmodifiable(_localMovements));
-          }
-        }
-      } catch (e) {
-        debugPrint('Aviso: falha ao gravar stock_movements no Supabase: $e');
-        // Fallback defensivo: se falhar com notes ou product_id (por FK, tipo UUID ou coluna inexistente)
-        try {
-          final fallbackPayload = movement.toMap(forDatabaseInsert: true);
-          if (e.toString().contains('notes') ||
-              e.toString().contains('42703') ||
-              e.toString().contains('PGRST204')) {
-            fallbackPayload.remove('notes');
-          }
-          fallbackPayload['product_id'] = null;
-          final res = await _client!
-              .from('stock_movements')
-              .insert(fallbackPayload)
-              .select()
-              .maybeSingle();
-          if (res != null) {
-            final serverMovement = StockMovementModel.fromMap(res);
-            final idx = _localMovements.indexOf(movement);
-            final merged = serverMovement.copyWith(
-              notes: serverMovement.notes ?? movement.notes,
-            );
-            if (idx != -1) {
-              _localMovements[idx] = merged;
-              if (!_movementsStreamController.isClosed) {
-                _movementsStreamController.add(List.unmodifiable(_localMovements));
-              }
+            if (!_movementsStreamController.isClosed) {
+              _movementsStreamController.add(List.unmodifiable(_localMovements));
             }
           }
-        } catch (e2) {
-          debugPrint('Falha no fallback de gravação de stock_movements: $e2');
         }
+      } catch (e2) {
+        debugPrint('Falha no fallback de gravação de stock_movements em segundo plano: $e2');
       }
     }
   }
