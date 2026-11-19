@@ -45,6 +45,33 @@ enum HistorySortOrder {
   const HistorySortOrder(this.label);
 }
 
+abstract class HistoryItemEntry {}
+
+class SingleMovementEntry extends HistoryItemEntry {
+  final StockMovementModel movement;
+  SingleMovementEntry(this.movement);
+}
+
+class GroupedUnitMovementEntry extends HistoryItemEntry {
+  final String groupKey;
+  final String operatorName;
+  final DateTime startTime;
+  final DateTime endTime;
+  final List<StockMovementModel> movements;
+
+  GroupedUnitMovementEntry({
+    required this.groupKey,
+    required this.operatorName,
+    required this.startTime,
+    required this.endTime,
+    required this.movements,
+  });
+
+  int get totalNetDelta => movements.fold(0, (sum, m) => sum + m.delta);
+  int get totalAdditions => movements.where((m) => m.delta > 0).fold(0, (sum, m) => sum + m.delta);
+  int get totalRemovals => movements.where((m) => m.delta < 0).fold(0, (sum, m) => sum + m.delta.abs());
+}
+
 class HistoryScreen extends StatefulWidget {
   final List<CategoryModel> categories;
 
@@ -73,6 +100,62 @@ class _HistoryScreenState extends State<HistoryScreen> {
   HistoryQuantityFilter _selectedQtyFilter = HistoryQuantityFilter.all;
   HistorySourceFilter _selectedSourceFilter = HistorySourceFilter.all;
   HistorySortOrder _selectedSortOrder = HistorySortOrder.recentFirst;
+  final Set<String> _expandedGroupKeys = {};
+
+  List<HistoryItemEntry> _groupMovementsForDisplay(List<StockMovementModel> movements) {
+    if (movements.isEmpty) return [];
+
+    final List<HistoryItemEntry> entries = [];
+    int i = 0;
+
+    while (i < movements.length) {
+      final current = movements[i];
+      final isUnitAdjust = current.type == 'UNIT_ADD' || current.type == 'UNIT_REMOVE';
+
+      if (!isUnitAdjust) {
+        entries.add(SingleMovementEntry(current));
+        i++;
+        continue;
+      }
+
+      // Procura ajustes unitários consecutivos no mesmo momento (janela de até 90s entre eventos com mesmo operador)
+      final cluster = <StockMovementModel>[current];
+      int j = i + 1;
+
+      while (j < movements.length) {
+        final next = movements[j];
+        final nextIsUnit = next.type == 'UNIT_ADD' || next.type == 'UNIT_REMOVE';
+
+        if (!nextIsUnit) break;
+        if (next.operatorName.trim().toLowerCase() != current.operatorName.trim().toLowerCase()) break;
+
+        final diffSec = next.createdAt.difference(cluster.last.createdAt).inSeconds.abs();
+        if (diffSec > 90) break;
+
+        cluster.add(next);
+        j++;
+      }
+
+      if (cluster.length > 1) {
+        final startTime = cluster.first.createdAt;
+        final endTime = cluster.last.createdAt;
+        final groupKey = '${current.operatorName}_${startTime.millisecondsSinceEpoch}_${cluster.length}';
+        entries.add(GroupedUnitMovementEntry(
+          groupKey: groupKey,
+          operatorName: current.operatorName,
+          startTime: startTime,
+          endTime: endTime,
+          movements: cluster,
+        ));
+        i = j;
+      } else {
+        entries.add(SingleMovementEntry(current));
+        i++;
+      }
+    }
+
+    return entries;
+  }
 
   @override
   void initState() {
@@ -457,6 +540,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
           final allMovements = snapshot.data ?? [];
           final filteredList = _applyFilters(allMovements);
+          final displayItems = _groupMovementsForDisplay(filteredList);
 
           // Extrai operadores únicos presentes no histórico
           final operatorNames = allMovements
@@ -821,7 +905,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      '${filteredList.length} movimentações encontradas',
+                      displayItems.length == filteredList.length
+                          ? '${filteredList.length} movimentações encontradas'
+                          : '${filteredList.length} movimentações (${displayItems.length} registros agrupados)',
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -881,190 +967,422 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       : ListView.separated(
                           physics: const AlwaysScrollableScrollPhysics(),
                           padding: const EdgeInsets.all(16),
-                          itemCount: filteredList.length,
+                          itemCount: displayItems.length,
                           separatorBuilder: (_, _) => const SizedBox(height: 8),
                           itemBuilder: (context, index) {
-                          final m = filteredList[index];
-                          final isEntry = m.isEntry;
-                          final isCart = m.type.toUpperCase().startsWith('CART_');
-
-                          return Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: AppColors.border),
-                            ),
-                            child: Row(
-                              children: [
-                                // Ícone de Entrada ou Saída
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: isEntry
-                                        ? const Color(0xFFDCFCE7)
-                                        : const Color(0xFFFEE2E2),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Icon(
-                                    isEntry ? Icons.arrow_downward : Icons.arrow_upward,
-                                    size: 18,
-                                    color: isEntry ? AppColors.stockNormal : AppColors.stockZero,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-
-                                // Informações do Produto
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              m.productName,
-                                              style: GoogleFonts.inter(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          // Tag de Origem (Carrinho vs Ajuste Direto)
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 6, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              color: isCart
-                                                  ? AppColors.primaryContainer
-                                                  : Colors.grey.shade100,
-                                              borderRadius: BorderRadius.circular(4),
-                                            ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(
-                                                  isCart
-                                                      ? Icons.shopping_cart_outlined
-                                                      : Icons.tune,
-                                                  size: 11,
-                                                  color: isCart
-                                                      ? AppColors.primary
-                                                      : AppColors.textSecondary,
-                                                ),
-                                                const SizedBox(width: 3),
-                                                Text(
-                                                  isCart ? 'Carrinho' : 'Ajuste Direto',
-                                                  style: GoogleFonts.inter(
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.w700,
-                                                    color: isCart
-                                                        ? AppColors.primary
-                                                        : AppColors.textSecondary,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Wrap(
-                                        spacing: 8,
-                                        children: [
-                                          if (m.internalCode != null &&
-                                              m.internalCode!.isNotEmpty)
-                                            Text(
-                                              'Cód: ${m.internalCode}',
-                                              style: GoogleFonts.robotoMono(
-                                                  fontSize: 11, color: AppColors.primaryDark),
-                                            ),
-                                          if (m.manufacturerCode != null &&
-                                              m.manufacturerCode!.isNotEmpty)
-                                            Text(
-                                              'P/N: ${m.manufacturerCode}',
-                                              style: GoogleFonts.robotoMono(
-                                                  fontSize: 11, color: AppColors.textSecondary),
-                                            ),
-                                          Text(
-                                            'Pessoa: ${m.operatorName}',
-                                            style: GoogleFonts.inter(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w600,
-                                                color: AppColors.textPrimary),
-                                          ),
-                                        ],
-                                      ),
-                                      if (m.notes != null && m.notes!.trim().isNotEmpty) ...[
-                                        const SizedBox(height: 3),
-                                        Row(
-                                          children: [
-                                            const Icon(Icons.note_alt_outlined,
-                                                size: 13, color: AppColors.primary),
-                                            const SizedBox(width: 4),
-                                            Expanded(
-                                              child: Text(
-                                                'Obs: ${m.notes!.trim()}',
-                                                style: GoogleFonts.inter(
-                                                  fontSize: 11,
-                                                  fontStyle: FontStyle.italic,
-                                                  color: AppColors.primaryDark,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                      Text(
-                                        DateFormat('dd/MM/yyyy HH:mm:ss').format(m.createdAt),
-                                        style: GoogleFonts.inter(
-                                            fontSize: 10, color: AppColors.textMuted),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-
-                                const SizedBox(width: 8),
-
-                                // Quantidade e Saldo
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Text(
-                                      '${isEntry ? "+" : ""}${m.delta} un',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w800,
-                                        color: isEntry
-                                            ? AppColors.stockNormal
-                                            : AppColors.stockZero,
-                                      ),
-                                    ),
-                                    Text(
-                                      'Saldo: ${m.newQuantity} un',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 11,
-                                        color: AppColors.textSecondary,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
+                            final entry = displayItems[index];
+                            if (entry is GroupedUnitMovementEntry) {
+                              return _buildGroupedCard(entry);
+                            } else if (entry is SingleMovementEntry) {
+                              return _buildSingleMovementCard(entry.movement);
+                            }
+                            return const SizedBox.shrink();
+                          },
+                        ),
                 ),
               ),
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildGroupedCard(GroupedUnitMovementEntry group) {
+    final isExpanded = _expandedGroupKeys.contains(group.groupKey);
+    final dateFormat = DateFormat('dd/MM/yyyy HH:mm:ss');
+    final timeFormat = DateFormat('HH:mm:ss');
+
+    final timeLabel = group.startTime.difference(group.endTime).inSeconds.abs() > 5
+        ? '${dateFormat.format(group.startTime)} - ${timeFormat.format(group.endTime)}'
+        : dateFormat.format(group.startTime);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isExpanded ? AppColors.primary : AppColors.border,
+          width: isExpanded ? 1.5 : 1,
+        ),
+      ),
+      child: Column(
+        children: [
+          // Header do Grupo
+          InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: () {
+              setState(() {
+                if (isExpanded) {
+                  _expandedGroupKeys.remove(group.groupKey);
+                } else {
+                  _expandedGroupKeys.add(group.groupKey);
+                }
+              });
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEEF2FF),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.tune,
+                      color: Color(0xFF4F46E5),
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                'Ajustes Unitários (+ / -)',
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textPrimary,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEEF2FF),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                '${group.movements.length} itens no mesmo momento',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF4F46E5),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Pessoa: ${group.operatorName}',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          timeLabel,
+                          style: GoogleFonts.inter(fontSize: 10, color: AppColors.textMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (group.totalAdditions > 0)
+                            Text(
+                              '+${group.totalAdditions}',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.stockNormal,
+                              ),
+                            ),
+                          if (group.totalAdditions > 0 && group.totalRemovals > 0)
+                            const Text(' / ', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                          if (group.totalRemovals > 0)
+                            Text(
+                              '-${group.totalRemovals}',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.stockZero,
+                              ),
+                            ),
+                        ],
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            isExpanded ? 'Ocultar' : 'Ver todos',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                          Icon(
+                            isExpanded ? Icons.expand_less : Icons.expand_more,
+                            size: 16,
+                            color: AppColors.primary,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Sub-itens expandidos
+          if (isExpanded) ...[
+            const Divider(height: 1, color: AppColors.border),
+            Container(
+              color: const Color(0xFFF8FAFC),
+              child: ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                itemCount: group.movements.length,
+                separatorBuilder: (_, _) => const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                itemBuilder: (context, subIdx) {
+                  final subM = group.movements[subIdx];
+                  final isSubEntry = subM.isEntry;
+
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isSubEntry ? Icons.add_circle_outline : Icons.remove_circle_outline,
+                          size: 16,
+                          color: isSubEntry ? AppColors.stockNormal : AppColors.stockZero,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                subM.productName,
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimary,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Wrap(
+                                spacing: 8,
+                                children: [
+                                  if (subM.internalCode != null && subM.internalCode!.isNotEmpty)
+                                    Text(
+                                      'Cód: ${subM.internalCode}',
+                                      style: GoogleFonts.robotoMono(
+                                        fontSize: 10,
+                                        color: AppColors.primaryDark,
+                                      ),
+                                    ),
+                                  if (subM.manufacturerCode != null && subM.manufacturerCode!.isNotEmpty)
+                                    Text(
+                                      'P/N: ${subM.manufacturerCode}',
+                                      style: GoogleFonts.robotoMono(
+                                        fontSize: 10,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                  Text(
+                                    timeFormat.format(subM.createdAt),
+                                    style: GoogleFonts.inter(fontSize: 10, color: AppColors.textMuted),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '${isSubEntry ? "+" : ""}${subM.delta} un',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: isSubEntry ? AppColors.stockNormal : AppColors.stockZero,
+                              ),
+                            ),
+                            Text(
+                              'Saldo: ${subM.newQuantity} un',
+                              style: GoogleFonts.inter(fontSize: 10, color: AppColors.textSecondary),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSingleMovementCard(StockMovementModel m) {
+    final isEntry = m.isEntry;
+    final isCart = m.type.toUpperCase().startsWith('CART_');
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: isEntry ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              isEntry ? Icons.arrow_downward : Icons.arrow_upward,
+              size: 18,
+              color: isEntry ? AppColors.stockNormal : AppColors.stockZero,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        m.productName,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isCart ? AppColors.primaryContainer : Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isCart ? Icons.shopping_cart_outlined : Icons.tune,
+                            size: 11,
+                            color: isCart ? AppColors.primary : AppColors.textSecondary,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            isCart ? 'Carrinho' : 'Ajuste Direto',
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: isCart ? AppColors.primary : AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    if (m.internalCode != null && m.internalCode!.isNotEmpty)
+                      Text(
+                        'Cód: ${m.internalCode}',
+                        style: GoogleFonts.robotoMono(fontSize: 11, color: AppColors.primaryDark),
+                      ),
+                    if (m.manufacturerCode != null && m.manufacturerCode!.isNotEmpty)
+                      Text(
+                        'P/N: ${m.manufacturerCode}',
+                        style: GoogleFonts.robotoMono(fontSize: 11, color: AppColors.textSecondary),
+                      ),
+                    Text(
+                      'Pessoa: ${m.operatorName}',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+                if (m.notes != null && m.notes!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      const Icon(Icons.note_alt_outlined, size: 13, color: AppColors.primary),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          'Obs: ${m.notes!.trim()}',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontStyle: FontStyle.italic,
+                            color: AppColors.primaryDark,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                Text(
+                  DateFormat('dd/MM/yyyy HH:mm:ss').format(m.createdAt),
+                  style: GoogleFonts.inter(fontSize: 10, color: AppColors.textMuted),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${isEntry ? "+" : ""}${m.delta} un',
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: isEntry ? AppColors.stockNormal : AppColors.stockZero,
+                ),
+              ),
+              Text(
+                'Saldo: ${m.newQuantity} un',
+                style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

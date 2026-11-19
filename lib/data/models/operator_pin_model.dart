@@ -18,6 +18,7 @@ class OperatorPinModel {
   });
 
   bool get isMasterPin => masterCategory == 'todas';
+  bool get canAccessAll => isMasterPin;
 
   String get masterCategoryLabel {
     switch (masterCategory.toLowerCase()) {

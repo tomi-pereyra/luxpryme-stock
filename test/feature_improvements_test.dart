@@ -782,4 +782,179 @@ void main() {
       expect(invalid, isNull);
     });
   });
+
+  group('Lixeira de Produtos e Restauração Tests', () {
+    test('LocalCacheService salva e carrega lista de lixeira', () async {
+      final cache = LocalCacheService.instance;
+      final dummyTrash = [
+        const ProductModel(
+          id: 'trash-prod-1',
+          name: 'Item Lixeira 1',
+          categoryIds: ['cat-1'],
+          masterCategories: ['eletronica'],
+          quantity: 12,
+        ),
+        const ProductModel(
+          id: 'trash-prod-2',
+          name: 'Item Lixeira 2',
+          categoryIds: ['cat-2'],
+          masterCategories: ['producao'],
+          quantity: 5,
+        ),
+      ];
+
+      await cache.saveTrash(dummyTrash);
+      final loaded = await cache.loadTrash();
+
+      expect(loaded, isNotNull);
+      expect(loaded!.length, equals(2));
+      expect(loaded.first.name, equals('Item Lixeira 1'));
+      expect(loaded.last.name, equals('Item Lixeira 2'));
+    });
+
+    test('deleteProduct move produto para a lixeira e restoreProduct recupera o item', () async {
+      final service = InventoryService.instance;
+      service.setMode(localMode: true);
+
+      final testProd = ProductModel(
+        id: 'prod-trash-test-99',
+        name: 'Transistor Lixeira Teste',
+        internalCode: 'TR-999',
+        manufacturerCode: 'PN-999',
+        categoryIds: ['cat-smd'],
+        masterCategories: ['eletronica'],
+        quantity: 30,
+      );
+
+      await service.createProduct(testProd, pin: '2026');
+
+      // 1. Exclui o produto (move para a lixeira)
+      await service.deleteProduct(testProd.id, pin: '2026');
+
+      // Verifica se sumiu dos produtos ativos
+      final activeProducts = await service.fetchProducts();
+      expect(activeProducts.any((p) => p.id == testProd.id), isFalse);
+
+      // Verifica se está presente na lixeira
+      final trashList = service.currentTrashProducts;
+      expect(trashList.any((p) => p.id == testProd.id), isTrue);
+      final inTrash = trashList.firstWhere((p) => p.id == testProd.id);
+      expect(inTrash.quantity, equals(30));
+
+      // 2. Restaura o produto da lixeira
+      final restored = await service.restoreProduct(testProd.id, pin: '2026');
+      expect(restored.id, equals(testProd.id));
+      expect(restored.name, equals(testProd.name));
+
+      // Verifica se voltou aos produtos ativos e saiu da lixeira
+      final activeAfterRestore = await service.fetchProducts();
+      expect(activeAfterRestore.any((p) => p.id == testProd.id), isTrue);
+
+      final trashAfterRestore = service.currentTrashProducts;
+      expect(trashAfterRestore.any((p) => p.id == testProd.id), isFalse);
+    });
+  });
+
+  group('Histórico de Movimentações: Agrupamento no Mesmo Momento Tests', () {
+    test('Agrupa ajustes unitários (+ e -) consecutivos do mesmo operador em janela curta', () {
+      final now = DateTime(2026, 11, 19, 14, 30, 0);
+
+      final List<StockMovementModel> movements = [
+        StockMovementModel(
+          id: 'mov-1',
+          productId: 'p1',
+          productName: 'Resistor 10k',
+          categoryNames: const ['Eletrônica'],
+          delta: 1,
+          previousQuantity: 10,
+          newQuantity: 11,
+          type: 'UNIT_ADD',
+          operatorName: 'Tomas Pereyra',
+          createdAt: now,
+        ),
+        StockMovementModel(
+          id: 'mov-2',
+          productId: 'p1',
+          productName: 'Resistor 10k',
+          categoryNames: const ['Eletrônica'],
+          delta: 1,
+          previousQuantity: 11,
+          newQuantity: 12,
+          type: 'UNIT_ADD',
+          operatorName: 'Tomas Pereyra',
+          createdAt: now.add(const Duration(seconds: 15)),
+        ),
+        StockMovementModel(
+          id: 'mov-3',
+          productId: 'p2',
+          productName: 'Capacitor 100uF',
+          categoryNames: const ['Eletrônica'],
+          delta: -1,
+          previousQuantity: 50,
+          newQuantity: 49,
+          type: 'UNIT_REMOVE',
+          operatorName: 'Tomas Pereyra',
+          createdAt: now.add(const Duration(seconds: 30)),
+        ),
+        // Movimentação de carrinho ou outro operador (não deve agrupar)
+        StockMovementModel(
+          id: 'mov-4',
+          productId: 'p3',
+          productName: 'LED Verde',
+          categoryNames: const ['Eletrônica'],
+          delta: -5,
+          previousQuantity: 20,
+          newQuantity: 15,
+          type: 'CART_CHECKOUT',
+          operatorName: 'Tomas Pereyra',
+          createdAt: now.add(const Duration(seconds: 40)),
+        ),
+      ];
+
+      // Algoritmo de agrupamento
+      List<dynamic> groupMovements(List<StockMovementModel> list) {
+        final List<dynamic> entries = [];
+        int i = 0;
+        while (i < list.length) {
+          final current = list[i];
+          final isUnit = current.type == 'UNIT_ADD' || current.type == 'UNIT_REMOVE';
+          if (!isUnit) {
+            entries.add(current);
+            i++;
+            continue;
+          }
+          final cluster = <StockMovementModel>[current];
+          int j = i + 1;
+          while (j < list.length) {
+            final next = list[j];
+            final nextIsUnit = next.type == 'UNIT_ADD' || next.type == 'UNIT_REMOVE';
+            if (!nextIsUnit) break;
+            if (next.operatorName.trim().toLowerCase() != current.operatorName.trim().toLowerCase()) break;
+            if (next.createdAt.difference(cluster.last.createdAt).inSeconds.abs() > 90) break;
+            cluster.add(next);
+            j++;
+          }
+          if (cluster.length > 1) {
+            entries.add(cluster);
+            i = j;
+          } else {
+            entries.add(current);
+            i++;
+          }
+        }
+        return entries;
+      }
+
+      final grouped = groupMovements(movements);
+
+      // Deve resultar em 2 entradas:
+      // 1: Grupo dos 3 ajustes unitários (mov-1, mov-2, mov-3)
+      // 2: Movimentação única de carrinho (mov-4)
+      expect(grouped.length, equals(2));
+      expect(grouped.first is List, isTrue);
+      expect((grouped.first as List).length, equals(3));
+      expect(grouped.last is StockMovementModel, isTrue);
+      expect((grouped.last as StockMovementModel).id, equals('mov-4'));
+    });
+  });
 }

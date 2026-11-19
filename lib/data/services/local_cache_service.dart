@@ -215,6 +215,40 @@ class LocalCacheService {
   }
 
   // ---------------------------------------------------------------------------
+  // LIXEIRA DE PRODUTOS EXCLUÍDOS (TRASH BIN)
+  // ---------------------------------------------------------------------------
+
+  Future<void> saveTrash(List<ProductModel> trash) async {
+    try {
+      final dir = await _getCacheDirectory();
+      final file = _getFile(dir, 'cached_trash.json');
+      final list = trash.map((p) => p.toMap()).toList();
+      await file.writeAsString(jsonEncode(list));
+    } catch (e) {
+      debugPrint('Erro ao salvar cache de lixeira: $e');
+    }
+  }
+
+  Future<List<ProductModel>?> loadTrash() async {
+    try {
+      final dir = await _getCacheDirectory();
+      final file = _getFile(dir, 'cached_trash.json');
+      if (!await file.exists()) return null;
+
+      final str = await file.readAsString();
+      if (str.trim().isEmpty) return null;
+
+      final List list = jsonDecode(str);
+      return list
+          .map((item) => ProductModel.fromMap(Map<String, dynamic>.from(item)))
+          .toList();
+    } catch (e) {
+      debugPrint('Erro ao carregar cache de lixeira: $e');
+      return null;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // FILA DE SINCRONIZAÇÃO OFFLINE (PENDING SYNC QUEUE)
   // ---------------------------------------------------------------------------
 

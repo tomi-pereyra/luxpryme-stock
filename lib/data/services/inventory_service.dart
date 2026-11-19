@@ -78,11 +78,14 @@ class InventoryService {
   late List<OperatorPinModel> _localPins;
   late List<StockMovementModel> _localMovements;
   late List<MasterCategoryModel> _masterCategories;
+  List<ProductModel> _trashProducts = [];
   List<StockConflictModel> _conflicts = [];
 
   final _categoriesStreamController =
       StreamController<List<CategoryModel>>.broadcast();
   final _productsStreamController =
+      StreamController<List<ProductModel>>.broadcast();
+  final _trashStreamController =
       StreamController<List<ProductModel>>.broadcast();
   final _pinsStreamController =
       StreamController<List<OperatorPinModel>>.broadcast();
@@ -95,6 +98,18 @@ class InventoryService {
 
   List<MasterCategoryModel> get masterCategories =>
       List.unmodifiable(_masterCategories);
+
+  List<ProductModel> get currentTrashProducts =>
+      List.unmodifiable(_trashProducts);
+
+  Stream<List<ProductModel>> streamTrashProducts() {
+    Timer.run(() {
+      if (!_trashStreamController.isClosed) {
+        _trashStreamController.add(List.unmodifiable(_trashProducts));
+      }
+    });
+    return _trashStreamController.stream;
+  }
 
   List<StockConflictModel> get activeConflicts =>
       List.unmodifiable(_conflicts);
@@ -159,6 +174,14 @@ class InventoryService {
         _conflicts = cachedConflicts;
         if (!_conflictsStreamController.isClosed) {
           _conflictsStreamController.add(List.unmodifiable(_conflicts));
+        }
+      }
+
+      final cachedTrash = await LocalCacheService.instance.loadTrash();
+      if (cachedTrash != null && cachedTrash.isNotEmpty) {
+        _trashProducts = cachedTrash;
+        if (!_trashStreamController.isClosed) {
+          _trashStreamController.add(List.unmodifiable(_trashProducts));
         }
       }
 
@@ -833,6 +856,12 @@ class InventoryService {
               }
               break;
 
+            case 'restore_product':
+              final productMap = Map<String, dynamic>.from(action['product']);
+              final prod = ProductModel.fromMap(productMap);
+              await _client!.from(AppConstants.tableProducts).upsert(prod.toMap(forDatabaseInsert: false));
+              break;
+
             case 'bulk_add_master_cat':
             case 'bulk_remove_master_cat':
             case 'move_master_cat':
@@ -931,6 +960,9 @@ class InventoryService {
           loaded.insert(0, localP);
         }
       }
+
+      // Garante que produtos que estão na lixeira não reapareçam no estoque ativo
+      loaded.removeWhere((p) => _trashProducts.any((t) => t.id == p.id));
 
       _allProducts = loaded;
       _localProducts = loaded;
@@ -1467,6 +1499,23 @@ class InventoryService {
 
     _localProducts.removeWhere((p) => p.id == productId);
     _allProducts.removeWhere((p) => p.id == productId);
+
+    // Armazena na lixeira local para possibilitar recuperação
+    if (targetProduct != null) {
+      _trashProducts.removeWhere((p) => p.id == productId);
+      _trashProducts.insert(
+        0,
+        targetProduct.copyWith(
+          updatedAt: DateTime.now(),
+          notes: 'Excluído por: $operatorName',
+        ),
+      );
+      await LocalCacheService.instance.saveTrash(_trashProducts);
+      if (!_trashStreamController.isClosed) {
+        _trashStreamController.add(List.unmodifiable(_trashProducts));
+      }
+    }
+
     await LocalCacheService.instance.saveProducts(_allProducts.isNotEmpty ? _allProducts : _localProducts);
     if (!_productsStreamController.isClosed) {
       _productsStreamController.add(List.unmodifiable(_allProducts.isNotEmpty ? _allProducts : _localProducts));
@@ -1482,6 +1531,119 @@ class InventoryService {
     }
 
     unawaited(_backgroundSyncDeleteProduct(productId));
+  }
+
+  Future<ProductModel> restoreProduct(String productId, {String? pin}) async {
+    final trashIndex = _trashProducts.indexWhere((p) => p.id == productId);
+    if (trashIndex == -1) {
+      throw Exception('Produto não encontrado na lixeira.');
+    }
+    final targetProduct = _trashProducts[trashIndex];
+
+    String operatorName = 'Administrador';
+    if (pin != null && pin.isNotEmpty) {
+      final op = await validatePin(pin);
+      if (op == null) throw Exception('PIN inválido ou não autorizado.');
+      if (!op.canModify(targetProduct)) {
+        throw Exception(
+          'Acesso negado: O PIN "${op.name}" (${op.masterCategoryLabel}) '
+          'não possui autorização para restaurar produtos deste setor.',
+        );
+      }
+      operatorName = op.name;
+    }
+
+    // 1. Remove da lixeira
+    _trashProducts.removeAt(trashIndex);
+    await LocalCacheService.instance.saveTrash(_trashProducts);
+    if (!_trashStreamController.isClosed) {
+      _trashStreamController.add(List.unmodifiable(_trashProducts));
+    }
+
+    // 2. Adiciona de volta aos produtos ativos
+    final restoredProduct = targetProduct.copyWith(
+      updatedAt: DateTime.now(),
+      notes: null,
+    );
+    _localProducts.insert(0, restoredProduct);
+    _allProducts.insert(0, restoredProduct);
+    await LocalCacheService.instance.saveProducts(_allProducts.isNotEmpty ? _allProducts : _localProducts);
+    if (!_productsStreamController.isClosed) {
+      _productsStreamController.add(List.unmodifiable(_allProducts.isNotEmpty ? _allProducts : _localProducts));
+    }
+
+    // 3. Grava movimentação de restauração no histórico
+    final movement = StockMovementModel(
+      id: 'mov-${DateTime.now().microsecondsSinceEpoch}',
+      productId: restoredProduct.id,
+      productName: restoredProduct.name,
+      productCode: restoredProduct.code,
+      internalCode: restoredProduct.internalCode,
+      manufacturerCode: restoredProduct.manufacturerCode,
+      categoryNames: restoredProduct.categoryNames ?? [],
+      delta: restoredProduct.quantity,
+      previousQuantity: 0,
+      newQuantity: restoredProduct.quantity,
+      type: 'PRODUCT_RESTORE',
+      operatorName: operatorName,
+      pinUsed: pin != null && pin.isNotEmpty ? '****' : null,
+      notes: 'Produto recuperado da Lixeira',
+      createdAt: DateTime.now(),
+    );
+    await _recordMovement(movement);
+
+    if (_isLocalMode || _client == null) {
+      _notifyLocal();
+      return restoredProduct;
+    }
+
+    unawaited(_backgroundSyncRestoreProduct(restoredProduct));
+    return restoredProduct;
+  }
+
+  Future<void> permanentlyDeleteProduct(String productId, {String? pin}) async {
+    if (pin != null && pin.isNotEmpty) {
+      final op = await validatePin(pin);
+      if (op == null) throw Exception('PIN inválido ou não autorizado.');
+      if (!op.canAccessAll) {
+        throw Exception('Apenas PIN Administrador pode excluir permanentemente da lixeira.');
+      }
+    }
+    _trashProducts.removeWhere((p) => p.id == productId);
+    await LocalCacheService.instance.saveTrash(_trashProducts);
+    if (!_trashStreamController.isClosed) {
+      _trashStreamController.add(List.unmodifiable(_trashProducts));
+    }
+  }
+
+  Future<void> emptyTrash({String? pin}) async {
+    if (pin != null && pin.isNotEmpty) {
+      final op = await validatePin(pin);
+      if (op == null) throw Exception('PIN inválido ou não autorizado.');
+      if (!op.canAccessAll) {
+        throw Exception('Apenas PIN Administrador pode esvaziar a lixeira.');
+      }
+    }
+    _trashProducts.clear();
+    await LocalCacheService.instance.saveTrash(_trashProducts);
+    if (!_trashStreamController.isClosed) {
+      _trashStreamController.add(List.unmodifiable(_trashProducts));
+    }
+  }
+
+  Future<void> _backgroundSyncRestoreProduct(ProductModel product) async {
+    if (_client == null || _isLocalMode) return;
+    try {
+      await _client!
+          .from(AppConstants.tableProducts)
+          .upsert(product.toMap(forDatabaseInsert: false));
+    } catch (e) {
+      debugPrint('Aviso: offline ao restaurar produto em segundo plano, enfileirando: $e');
+      await LocalCacheService.instance.queueSyncAction({
+        'action_type': 'restore_product',
+        'product': product.toMap(),
+      });
+    }
   }
 
   Future<void> _backgroundSyncDeleteProduct(String productId) async {

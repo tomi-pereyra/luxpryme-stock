@@ -81,19 +81,29 @@ flowchart TD
   4. **Dispensar Notificação**.
 
 ### 4. Gestão em Lote de Setores (`+ Itens` e `- Itens`)
-* **`+ Itens`:** Ferramenta com busca inteligente e contador dinâmico (círculo azul) para adicionar múltiplos produtos a um setor. A busca limpa automaticamente a cada seleção para agilizar o fluxo contínuo.
-* **`- Itens`:** Filtra apenas os itens do setor para desvincular em lote com segurança.
+* **`+ Itens`:** Ferramenta com busca inteligente e contador dinâmico (círculo azul) para adicionar múltiplos produtos a um setor. A busca limpa automaticamente o campo a cada seleção enquanto a lista permanece congelada na exata posição onde o item foi clicado, só mudando quando o usuário volta a digitar.
+* **`- Itens`:** Filtra apenas os itens do setor para desvincular em lote com segurança e a mesma rolagem preservada.
 
-### 5. Carrinho de Separação com Observação Técnica
+### 5. Lixeira de Produtos (Recuperação Segura Anti-Exclusão)
+* Exclusões de produtos não são destrutivas: itens excluídos são movidos com segurança para a **Lixeira de Produtos**.
+* Permite pesquisar e **Restaurar** qualquer item de volta ao estoque ativo com 1 clique (e autorização por PIN), preservando intactos todos os códigos, setores e quantidades anteriores.
+* Disponível tanto no menu flutuante inferior direito quanto no botão de lixeira no cabeçalho superior.
+
+### 6. Carrinho de Separação com Observação Técnica
 * Separação de kits de componentes para ordens de produção ou entrada de notas de fornecedores.
 * Suporta **anotação opcional** direta no carrinho (ex: *"OS #840 - Linha 2 de Luminárias"*).
 * Baixa conjunta protegida por autenticação de **PIN de 4 dígitos**.
 
-### 6. Busca Multi-Termo Desordenada
+### 7. Histórico com Agrupamento Inteligente no Mesmo Momento
+* Movimentações unitárias rápidas (`+` e `-`) feitas em sequência no mesmo momento pelo mesmo operador são consolidadas automaticamente em um único **cartão expansível**.
+* Evita poluição visual de dezenas de linhas individuais, permitindo expandir ("Ver todos") para auditar cada componente com horário e saldo resultante.
+* Exportação completa para planilhas CSV com um clique.
+
+### 8. Busca Multi-Termo Desordenada
 * Localiza qualquer produto mesmo se as palavras forem digitadas fora de ordem (ex: `farol placa 16` encontra `MONTAGEM PLACA ELETRONICA FAROL 16 LEDS`).
 * Busca instantânea por Código Interno e Part Number do Fabricante.
 
-### 7. Interface Adaptativa (Mobile vs Desktop)
+### 9. Interface Adaptativa (Mobile vs Desktop)
 * **Mobile (Android):** Menu superior limpo com busca expansível via lupa, barra de setores compacta, acesso às famílias técnicas via toque longo no chip do setor e menu circular de ações flutuante no canto inferior direito.
 * **Desktop (Windows):** Barra de busca ampla centralizada, atalhos de administração no cabeçalho e menu de ferramentas rápidas.
 
@@ -108,7 +118,7 @@ flowchart TD
 | **Banco de Dados Cloud** | Supabase (PostgreSQL 15) | Regras RLS, triggers de integridade, UUIDs nativos e canais Realtime |
 | **Cache Local** | LocalCacheService (Disco) | Armazenamento JSON local persistente e fila offline |
 | **Tipografia** | Google Fonts (Inter / Montserrat) | Ergonomia visual de alta densidade de dados |
-| **Testes Automatizados** | Flutter Test (36 testes) | Validação de regras de negócio, busca, RBAC e latência zero |
+| **Testes Automatizados** | Flutter Test (38 testes) | Validação de regras de negócio, busca, RBAC, lixeira e agrupamento |
 
 ---
 

@@ -164,7 +164,7 @@ Disponível no menu flutuante inferior direito, essa ferramenta permite reclassi
 4. Digite o nome ou código no campo de busca.
 5. Toque/clique nos itens desejados para selecioná-los:
    - Um contador em **círculo azul** com número branco surge à direita informando a quantidade de itens marcados.
-   - O campo de busca **limpa automaticamente o texto** e mantém o cursor pronto para você pesquisar o próximo item sem perder tempo apagando letras.
+   - **Navegação Contínua sem Perda de Posição:** Ao selecionar um componente, o texto da barra de busca é apagado automaticamente para deixar o campo pronto para o próximo item, mas a **lista permanece exatamente na mesma posição e com os mesmos resultados visíveis**. A lista só muda de posição quando você começa a digitar uma nova busca, permitindo selecionar múltiplos itens próximos sem saltos na tela.
 6. Clique em **Adicionar ao Setor**.
 7. Digite o **PIN Mestre do Supervisor** para autenticar a alteração. O catálogo é atualizado na hora em 0ms.
 
@@ -172,7 +172,7 @@ Disponível no menu flutuante inferior direito, essa ferramenta permite reclassi
 1. Abra o menu inferior direito e clique em **- Itens**.
 2. Selecione o Setor do qual deseja desvincular itens.
 3. **Filtro Exclusivo:** O sistema exibe **apenas os produtos que já pertencem** a esse setor.
-4. Selecione os produtos a remover.
+4. Selecione os produtos a remover (com a mesma preservação suave de rolagem e limpeza do campo de texto).
 5. Clique em **Remover do Setor** e autentique com o **PIN Mestre**.  
    *(Se um produto ficar sem nenhum setor vinculado, ele é transferido automaticamente para "Outros" por segurança).*
 
@@ -221,6 +221,16 @@ Com a arquitetura Local-First, o salvamento de cadastros e edições não depend
 * No menu de opções do card (`...`), clique em **Editar**.
 * Modifique qualquer informação técnica ou quantidade e clique em **Salvar Alterações**. O diálogo fecha na hora e a lista reflete a mudança imediatamente.
 * Para excluir, clique em **Excluir Produto** e confirme com o **PIN autorizado** correspondente ao setor.
+* **Segurança Anti-Exclusão Acidental:** O produto não é apagado de forma destrutiva imediata; ele é transferido para a **Lixeira de Produtos**, mantendo todo seu histórico e dados intactos para recuperação futura.
+
+### 9.3. Lixeira de Produtos e Restauração de Itens Excluídos
+Caso um produto tenha sido excluído por engano ou precise retornar ao catálogo ativo:
+1. Abra a **Lixeira de Produtos** tocando no ícone de lixeira no cabeçalho superior ou através do menu flutuante inferior direito.
+2. Localize o componente excluído pela barra de pesquisa por Nome, Código Interno ou P/N.
+3. Clique no botão **Restaurar**.
+4. Digite seu PIN de 4 dígitos para autorizar.
+5. **Retorno Imediato:** O produto é restaurado instantaneamente com a mesma quantidade de estoque e configurações de setor que possuía antes da exclusão.
+6. A supervisão geral também pode esvaziar a lixeira definitivamente quando necessário com o PIN Mestre.
 
 ---
 
@@ -300,7 +310,11 @@ Para auditar o fluxo de materiais da fábrica:
    - Saldo anterior e novo saldo resultante.
    - Nome do operador e identificação do PIN.
    - **Observação / Ordem de Produção** anotada no carrinho.
-3. **Exportar Relatório:** Clique em **Gerar Relatório** para salvar uma planilha CSV compatível com Excel e Google Sheets.
+3. **Agrupamento Inteligente no Mesmo Momento:**
+   - Quando um operador realiza múltiplos ajustes unitários rápidos usando os botões `+` e `-` no mesmo momento (janela de tempo contínua), o sistema agrupa essas movimentações em um único **cartão expansível** ("Ajustes Unitários (+ / -) • X itens no mesmo momento").
+   - Isso elimina dezenas de linhas fragmentadas na tela.
+   - Basta clicar em **Ver todos** no cartão para expandir e auditar cada produto ajustado individualmente com seus códigos, horários e saldos resultantes.
+4. **Exportar Relatório:** Clique em **Gerar Relatório** para salvar uma planilha CSV compatível com Excel e Google Sheets.
 
 ---
 

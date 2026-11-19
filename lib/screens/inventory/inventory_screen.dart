@@ -23,6 +23,7 @@ import 'widgets/pin_confirmation_dialog.dart';
 import 'widgets/library_mode_screen.dart';
 import 'widgets/batch_add_master_category_dialog.dart';
 import 'widgets/stock_conflict_dialog.dart';
+import 'widgets/trash_bin_dialog.dart';
 
 enum SortOption {
   nameAsc('Nome (A - Z)'),
@@ -627,41 +628,46 @@ class _InventoryScreenState extends State<InventoryScreen> {
   ) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) {
         return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryContainer,
-                        borderRadius: BorderRadius.circular(8),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.85,
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryContainer,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.apps, color: AppColors.primary, size: 20),
                       ),
-                      child: const Icon(Icons.apps, color: AppColors.primary, size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      'Menu de Ações',
-                      style: GoogleFonts.inter(
-                          fontSize: 16, fontWeight: FontWeight.w700),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Menu de Ações',
+                        style: GoogleFonts.inter(
+                            fontSize: 16, fontWeight: FontWeight.w700),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
 
                 // 1. + Itens
                 ListTile(
@@ -814,7 +820,62 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 ),
                 const Divider(height: 1),
 
-                // 5. Sobre o Sistema
+                // 5. Lixeira de Produtos
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.restore_from_trash,
+                        color: Color(0xFFD97706)),
+                  ),
+                  title: Row(
+                    children: [
+                      Text(
+                        'Lixeira de Produtos',
+                        style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w700, fontSize: 14),
+                      ),
+                      const SizedBox(width: 8),
+                      StreamBuilder<List<ProductModel>>(
+                        stream: InventoryService.instance.streamTrashProducts(),
+                        builder: (context, snapshot) {
+                          final count = snapshot.data?.length ?? 0;
+                          if (count == 0) return const SizedBox.shrink();
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFD97706),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '$count',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  subtitle: Text(
+                    'Visualizar e recuperar produtos excluídos',
+                    style: GoogleFonts.inter(
+                        fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    TrashBinDialog.show(context);
+                  },
+                ),
+                const Divider(height: 1),
+
+                // 6. Sobre o Sistema
                 ListTile(
                   leading: Container(
                     padding: const EdgeInsets.all(8),
@@ -843,10 +904,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
               ],
             ),
           ),
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 
   void _showAboutDialog() {
     showDialog(
@@ -1042,6 +1104,49 @@ class _InventoryScreenState extends State<InventoryScreen> {
                           MaterialPageRoute(
                             builder: (_) => HistoryScreen(categories: categories),
                           ),
+                        );
+                      },
+                    ),
+
+                    // Botão Lixeira de Produtos com Badge
+                    StreamBuilder<List<ProductModel>>(
+                      stream: InventoryService.instance.streamTrashProducts(),
+                      builder: (context, snapshot) {
+                        final count = snapshot.data?.length ?? 0;
+                        return Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              tooltip: 'Lixeira de Produtos Excluídos',
+                              onPressed: () => TrashBinDialog.show(context),
+                            ),
+                            if (count > 0)
+                              Positioned(
+                                right: 6,
+                                top: 8,
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFD97706),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  constraints: const BoxConstraints(
+                                    minWidth: 16,
+                                    minHeight: 16,
+                                  ),
+                                  child: Text(
+                                    '$count',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         );
                       },
                     ),

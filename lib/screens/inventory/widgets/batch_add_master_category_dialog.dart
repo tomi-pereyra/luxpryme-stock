@@ -48,7 +48,9 @@ class _BatchAddMasterCategoryDialogState
   final Set<String> _selectedProductIds = {};
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
-  String _searchQuery = '';
+  final ScrollController _scrollController = ScrollController();
+  String _activeFilterQuery = '';
+  bool _isFilterPreservedAfterSelection = false;
   bool _isSaving = false;
   String? _errorMessage;
 
@@ -69,21 +71,43 @@ class _BatchAddMasterCategoryDialogState
           validCategories.isNotEmpty ? validCategories.first.id : 'eletronica';
     }
 
-    _searchController.addListener(() {
-      setState(() {
-        _searchQuery = _searchController.text.trim();
-      });
-    });
+    _searchController.addListener(_onSearchInputChanged);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _searchFocusNode.requestFocus();
     });
   }
 
+  void _onSearchInputChanged() {
+    final text = _searchController.text;
+    if (_isFilterPreservedAfterSelection) {
+      // Se o campo de texto foi limpo programaticamente ao selecionar, mantém a lista visível
+      // na mesma posição até que o usuário volte a digitar novos caracteres
+      if (text.isEmpty) {
+        return;
+      }
+      // O usuário começou a digitar novamente! Atualiza o filtro e reposiciona no topo
+      setState(() {
+        _isFilterPreservedAfterSelection = false;
+        _activeFilterQuery = text.trim();
+      });
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(0);
+      }
+      return;
+    }
+
+    setState(() {
+      _activeFilterQuery = text.trim();
+    });
+  }
+
   @override
   void dispose() {
+    _searchController.removeListener(_onSearchInputChanged);
     _searchController.dispose();
     _searchFocusNode.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -93,9 +117,13 @@ class _BatchAddMasterCategoryDialogState
         _selectedProductIds.remove(product.id);
       } else {
         _selectedProductIds.add(product.id);
-        // Ao selecionar, apaga o texto da busca e mantém o foco no campo de texto
+        // Se havia uma busca ativa, congela a lista filtrada visível na posição atual
+        if (_activeFilterQuery.isNotEmpty) {
+          _isFilterPreservedAfterSelection = true;
+        }
+        // Apaga o que está escrito no campo de busca para o usuário digitar o próximo item,
+        // mas a lista permanece exatamente onde o componente foi selecionado
         _searchController.clear();
-        _searchQuery = '';
         _searchFocusNode.requestFocus();
       }
     });
@@ -332,6 +360,9 @@ class _BatchAddMasterCategoryDialogState
                                     setState(() {
                                       _selectedMasterCategoryId = val;
                                       _selectedProductIds.clear();
+                                      _isFilterPreservedAfterSelection = false;
+                                      _activeFilterQuery = '';
+                                      _searchController.clear();
                                     });
                                   }
                                 },
@@ -359,19 +390,26 @@ class _BatchAddMasterCategoryDialogState
                 focusNode: _searchFocusNode,
                 autofocus: true,
                 decoration: InputDecoration(
-                  hintText: isAddMode
-                      ? 'Pesquise itens fora de ${targetCategory.name}...'
-                      : 'Pesquise itens dentro de ${targetCategory.name}...',
+                  hintText: (_isFilterPreservedAfterSelection && _activeFilterQuery.isNotEmpty)
+                      ? 'Item selecionado! Digite para buscar outro componente...'
+                      : (isAddMode
+                          ? 'Pesquise itens fora de ${targetCategory.name}...'
+                          : 'Pesquise itens dentro de ${targetCategory.name}...'),
                   hintStyle: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted),
                   prefixIcon: Icon(Icons.search, color: actionColor, size: 20),
                   suffixIcon: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (_searchQuery.isNotEmpty)
+                      if (_searchController.text.isNotEmpty || _isFilterPreservedAfterSelection)
                         IconButton(
                           icon: const Icon(Icons.clear, size: 18),
+                          tooltip: 'Limpar busca e ver todos',
                           onPressed: () {
-                            _searchController.clear();
+                            setState(() {
+                              _isFilterPreservedAfterSelection = false;
+                              _activeFilterQuery = '';
+                              _searchController.clear();
+                            });
                             _searchFocusNode.requestFocus();
                           },
                         ),
@@ -451,10 +489,10 @@ class _BatchAddMasterCategoryDialogState
                               p.masterCategories.contains(_selectedMasterCategoryId))
                           .toList();
 
-                  final filteredProducts = _searchQuery.isEmpty
+                  final filteredProducts = _activeFilterQuery.isEmpty
                       ? scopedProducts
                       : scopedProducts
-                          .where((p) => p.matchesSearch(_searchQuery))
+                          .where((p) => p.matchesSearch(_activeFilterQuery))
                           .toList();
 
                   if (filteredProducts.isEmpty) {
@@ -462,8 +500,8 @@ class _BatchAddMasterCategoryDialogState
                       child: Padding(
                         padding: const EdgeInsets.all(24),
                         child: Text(
-                          _searchQuery.isNotEmpty
-                              ? 'Nenhum item encontrado para "$_searchQuery".'
+                          _activeFilterQuery.isNotEmpty
+                              ? 'Nenhum item encontrado para "$_activeFilterQuery".'
                               : (isAddMode
                                   ? 'Todos os itens já pertencem ao setor "${targetCategory.name}".'
                                   : 'Nenhum item vinculado ao setor "${targetCategory.name}".'),
@@ -475,6 +513,7 @@ class _BatchAddMasterCategoryDialogState
                   }
 
                   return ListView.separated(
+                    controller: _scrollController,
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     itemCount: filteredProducts.length,
                     separatorBuilder: (_, _) => const SizedBox(height: 6),
