@@ -186,6 +186,9 @@ class InventoryService {
       }
 
       _isCacheLoaded = true;
+      if (!_isLocalMode && _client != null) {
+        unawaited(fetchOperatorPins());
+      }
     } catch (e) {
       debugPrint('Aviso ao inicializar cache local persistente: $e');
     }
@@ -217,42 +220,42 @@ class InventoryService {
     }
     _localPins = [
       OperatorPinModel(
-        id: 'pin-1',
-        name: 'Tomas Pereyra (Desenvolvedor & Administrador)',
+        id: '687fa9ba-ddcd-4b27-9258-6823c6ea0254',
+        name: 'Claumir (Gerente Operacional)',
         pin: '2026',
         masterCategory: 'todas',
         isActive: true,
         createdAt: DateTime.now(),
       ),
       OperatorPinModel(
-        id: 'pin-2',
-        name: 'Roberto (Líder Produção)',
-        pin: '1234',
-        masterCategory: 'producao',
+        id: '64abbd58-9a29-4b6f-8c7b-78d882099e2c',
+        name: 'Tomas (Supervisor de Eletrônica)',
+        pin: '4464',
+        masterCategory: 'todas',
         isActive: true,
         createdAt: DateTime.now(),
       ),
       OperatorPinModel(
-        id: 'pin-3',
-        name: 'Linha de Montagem SMD',
-        pin: '1111',
+        id: '5a77a99d-6d9b-4b3b-b97c-18dc76812917',
+        name: 'Roberto (Monitor SMD)',
+        pin: '1830',
         masterCategory: 'eletronica',
         isActive: true,
         createdAt: DateTime.now(),
       ),
       OperatorPinModel(
-        id: 'pin-4',
-        name: 'Bancada PTH / Soldagem',
-        pin: '2222',
+        id: '1c6313e1-811d-4006-8b81-63c7ff2027a3',
+        name: 'Novachelande (Monitora PTH)',
+        pin: '1206',
         masterCategory: 'eletronica',
         isActive: true,
         createdAt: DateTime.now(),
       ),
       OperatorPinModel(
-        id: 'pin-5',
-        name: 'Montagem de Luminárias',
-        pin: '3333',
-        masterCategory: 'producao',
+        id: '3ba49c13-7611-40d8-9287-4ba0fef2fd3d',
+        name: 'Julia',
+        pin: '4512',
+        masterCategory: 'eletronica',
         isActive: true,
         createdAt: DateTime.now(),
       ),
@@ -303,6 +306,8 @@ class InventoryService {
     _isLocalMode = localMode;
     if (localMode) {
       _notifyLocal();
+    } else if (_client != null) {
+      unawaited(fetchOperatorPins());
     }
   }
 
@@ -1188,7 +1193,7 @@ class InventoryService {
       throw Exception('A quantidade inicial não pode ser negativa.');
     }
 
-    String operatorName = 'Administrador';
+    String operatorName = 'Operador (Sem PIN)';
     if (pin != null && pin.isNotEmpty) {
       final op = await validatePin(pin);
       if (op == null) throw Exception('PIN inválido ou não autorizado.');
@@ -1465,7 +1470,7 @@ class InventoryService {
       targetProduct = _allProducts.firstWhere((p) => p.id == productId);
     }
 
-    String operatorName = 'Administrador';
+    String operatorName = 'Operador (Sem PIN)';
     if (pin != null && pin.isNotEmpty) {
       final op = await validatePin(pin);
       if (op == null) throw Exception('PIN inválido ou não autorizado.');
@@ -1540,7 +1545,7 @@ class InventoryService {
     }
     final targetProduct = _trashProducts[trashIndex];
 
-    String operatorName = 'Administrador';
+    String operatorName = 'Operador (Sem PIN)';
     if (pin != null && pin.isNotEmpty) {
       final op = await validatePin(pin);
       if (op == null) throw Exception('PIN inválido ou não autorizado.');
@@ -1671,7 +1676,7 @@ class InventoryService {
     required int delta, // +1 ou -1
     String? pin,
   }) async {
-    String operatorName = 'Ajuste Unitário';
+    String operatorName = 'Ajuste Direto (+/-)';
     if (pin != null && pin.isNotEmpty) {
       final operatorPin = await validatePin(pin);
       if (operatorPin == null) throw Exception('PIN incorreto ou não autorizado.');
@@ -1958,20 +1963,57 @@ class InventoryService {
   }
 
   // ---------------------------------------------------------------------------
-  // GESTÃO DE PINS DE OPERADORES (ADMIN WINDOWS)
+  // GESTÃO DE PINS DE OPERADORES (ADMIN WINDOWS & SINCRONIZAÇÃO EM SEGUNDO PLANO)
   // ---------------------------------------------------------------------------
+
+  Future<List<OperatorPinModel>> fetchOperatorPins() async {
+    if (_isLocalMode || _client == null) {
+      return List.unmodifiable(_localPins);
+    }
+
+    try {
+      final records = await _client!
+          .from('operator_pins')
+          .select()
+          .order('name', ascending: true);
+
+      final list = (records as List)
+          .map((e) => OperatorPinModel.fromMap(e as Map<String, dynamic>))
+          .toList();
+
+      if (list.isNotEmpty) {
+        _localPins = list;
+        if (!_pinsStreamController.isClosed) {
+          _pinsStreamController.add(List.unmodifiable(_localPins));
+        }
+        await LocalCacheService.instance.savePins(_localPins);
+      }
+      return List.unmodifiable(_localPins);
+    } catch (e) {
+      debugPrint('Aviso ao sincronizar operator_pins do Supabase: $e');
+      return List.unmodifiable(_localPins);
+    }
+  }
 
   Stream<List<OperatorPinModel>> streamOperatorPins() {
     if (_isLocalMode || _client == null) {
-      Timer.run(() => _pinsStreamController.add(_localPins));
+      Timer.run(() => _pinsStreamController.add(List.unmodifiable(_localPins)));
       return _pinsStreamController.stream;
     }
+
+    // Busca imediatamente via REST para popular o cache local
+    fetchOperatorPins();
 
     return _client!
         .from('operator_pins')
         .stream(primaryKey: ['id'])
         .order('name', ascending: true)
-        .map((records) => records.map((e) => OperatorPinModel.fromMap(e)).toList());
+        .map((records) {
+          final list = records.map((e) => OperatorPinModel.fromMap(e)).toList();
+          _localPins = list;
+          LocalCacheService.instance.savePins(_localPins);
+          return list;
+        });
   }
 
   Future<void> createOperatorPin({
@@ -1996,16 +2038,30 @@ class InventoryService {
         createdAt: DateTime.now(),
       );
       _localPins.add(newPin);
+      await LocalCacheService.instance.savePins(_localPins);
+      if (!_pinsStreamController.isClosed) {
+        _pinsStreamController.add(List.unmodifiable(_localPins));
+      }
       _notifyLocal();
       return;
     }
 
-    await _client!.from('operator_pins').insert({
+    final res = await _client!.from('operator_pins').insert({
       'name': name.trim(),
       'pin': pin.trim(),
       'master_category': masterCategory.toLowerCase(),
       'is_active': true,
-    });
+    }).select().maybeSingle();
+
+    if (res != null) {
+      final op = OperatorPinModel.fromMap(res);
+      _localPins.removeWhere((p) => p.id == op.id || p.pin == op.pin);
+      _localPins.add(op);
+      await LocalCacheService.instance.savePins(_localPins);
+      if (!_pinsStreamController.isClosed) {
+        _pinsStreamController.add(List.unmodifiable(_localPins));
+      }
+    }
   }
 
   Future<void> moveProductMasterCategories({
@@ -2155,8 +2211,12 @@ class InventoryService {
   }
 
   Future<void> deleteOperatorPin(String id) async {
+    _localPins.removeWhere((p) => p.id == id);
+    await LocalCacheService.instance.savePins(_localPins);
+    if (!_pinsStreamController.isClosed) {
+      _pinsStreamController.add(List.unmodifiable(_localPins));
+    }
     if (_isLocalMode || _client == null) {
-      _localPins.removeWhere((p) => p.id == id);
       _notifyLocal();
       return;
     }

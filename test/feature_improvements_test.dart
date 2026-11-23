@@ -291,11 +291,11 @@ void main() {
       expect(service.masterCategories.any((mc) => mc.id == 'embalamento_e_expedicao'), isTrue);
     });
 
-    test('Rejeitar criação de Categoria Mestre com PIN não-mestre (ex: Eletrônica 1111)', () async {
+    test('Rejeitar criação de Categoria Mestre com PIN não-mestre (ex: Eletrônica 1830)', () async {
       expect(
         () => service.createMasterCategory(
           name: 'Pintura',
-          masterPin: '1111', // PIN de Eletrônica, não é mestre
+          masterPin: '1830', // PIN de Eletrônica, não é mestre
         ),
         throwsA(isA<Exception>().having(
           (e) => e.toString(),
@@ -645,7 +645,7 @@ void main() {
           conflictId: 'fake_conflict',
           productId: 'fake_prod',
           newQuantity: 0,
-          masterPin: '1111', // PIN de operador comum, não mestre
+          masterPin: '1830', // PIN de operador comum, não mestre (Roberto)
         ),
         throwsA(isA<Exception>().having(
           (e) => e.toString(),
@@ -772,14 +772,65 @@ void main() {
       expect(found.quantity, equals(16));
     });
 
-    test('validatePin valida PIN localmente a partir da memória/cache em 0ms', () async {
+    test('validatePin valida PIN localmente a partir da memória/cache em 0ms e atribui nomes corretos', () async {
       final service = InventoryService.instance;
-      final op = await service.validatePin('2026');
-      expect(op, isNotNull);
-      expect(op!.isMasterPin, isTrue);
+      
+      // Claumir (PIN: 2026)
+      final opClaumir = await service.validatePin('2026');
+      expect(opClaumir, isNotNull);
+      expect(opClaumir!.name, contains('Claumir'));
+      expect(opClaumir.isMasterPin, isTrue);
 
+      // Tomas (PIN: 4464)
+      final opTomas = await service.validatePin('4464');
+      expect(opTomas, isNotNull);
+      expect(opTomas!.name, contains('Tomas'));
+      expect(opTomas.isMasterPin, isTrue);
+
+      // PIN inválido
       final invalid = await service.validatePin('9999');
       expect(invalid, isNull);
+    });
+
+    test('Ajustes e operações sem PIN não são atribuídos a Tomas Pereyra', () async {
+      final service = InventoryService.instance;
+      final testProd = const ProductModel(
+        id: 'prod-no-pin-test',
+        name: 'Item Sem PIN',
+        categoryIds: ['cat-1'],
+        masterCategories: ['eletronica'],
+        quantity: 10,
+      );
+      await service.createProduct(testProd); // Sem PIN
+
+      final movements = await service.fetchMovements();
+      final creationMov = movements.firstWhere((m) => m.productId == 'prod-no-pin-test');
+      expect(creationMov.operatorName, isNot(contains('Tomas Pereyra')));
+      expect(creationMov.operatorName, equals('Operador (Sem PIN)'));
+
+      // Ajuste unitário sem PIN (+1)
+      await service.quickAdjustUnit(product: testProd, delta: 1); // Sem PIN
+      final updatedMovements = await service.fetchMovements();
+      final unitMov = updatedMovements.firstWhere((m) => m.productId == 'prod-no-pin-test' && m.delta == 1);
+      expect(unitMov.operatorName, isNot(contains('Tomas Pereyra')));
+      expect(unitMov.operatorName, equals('Ajuste Direto (+/-)'));
+    });
+
+    test('Operações com PIN do Claumir (2026) são atribuídas ao Claumir no histórico', () async {
+      final service = InventoryService.instance;
+      final testProd = const ProductModel(
+        id: 'prod-claumir-test',
+        name: 'Item Claumir',
+        categoryIds: ['cat-1'],
+        masterCategories: ['eletronica'],
+        quantity: 5,
+      );
+      await service.createProduct(testProd, pin: '2026');
+
+      final movements = await service.fetchMovements();
+      final mov = movements.firstWhere((m) => m.productId == 'prod-claumir-test');
+      expect(mov.operatorName, contains('Claumir'));
+      expect(mov.operatorName, isNot(contains('Tomas')));
     });
   });
 

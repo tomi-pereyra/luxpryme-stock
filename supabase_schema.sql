@@ -75,13 +75,13 @@ CREATE TABLE IF NOT EXISTS public.operator_pins (
 -- Migração Segura: Adiciona master_category caso a tabela já existisse
 ALTER TABLE public.operator_pins ADD COLUMN IF NOT EXISTS master_category TEXT NOT NULL DEFAULT 'eletronica';
 
--- Inserir / Atualizar PINs Iniciais com suas Categorias Mestres
+-- Inserir / Atualizar PINs Iniciais com seus Setores Autorizados
 INSERT INTO public.operator_pins (name, pin, master_category, is_active) VALUES
-    ('Tomas (Supervisor Geral - Acesso Total)', '2026', 'todas', true),
-    ('Roberto (Líder Produção)', '1234', 'producao', true),
-    ('Linha SMD (Eletrônica)', '1111', 'eletronica', true),
-    ('Bancada PTH (Eletrônica)', '2222', 'eletronica', true),
-    ('Montagem de Luminárias (Produção)', '3333', 'producao', true)
+    ('Claumir (Gerente Operacional)', '2026', 'todas', true),
+    ('Tomas (Supervisor de Eletrônica)', '4464', 'todas', true),
+    ('Roberto (Monitor SMD)', '1830', 'eletronica', true),
+    ('Novachelande (Monitora PTH)', '1206', 'eletronica', true),
+    ('Julia', '4512', 'eletronica', true)
 ON CONFLICT (pin) DO UPDATE SET 
     name = EXCLUDED.name,
     master_category = EXCLUDED.master_category,
