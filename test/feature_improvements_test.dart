@@ -41,6 +41,63 @@ void main() {
       expect(testProduct.matchesSearch('farol 32 leds'), isFalse);
       expect(testProduct.matchesSearch('farol resistor'), isFalse);
     });
+
+    test('Busca ignora acentos (diacríticos) de forma bidirecional', () {
+      expect(testProduct.matchesSearch('eletronica farol'), isTrue);
+      expect(testProduct.matchesSearch('eletrônica farol'), isTrue);
+      expect(testProduct.matchesSearch('iluminacao automotiva'), isTrue);
+    });
+
+    test('Melhor coincidência de busca: "placa eletronica slim ac" prioriza o produto exato no topo', () {
+      const bestMatch = ProductModel(
+        id: 'p1',
+        name: 'PLACA ELETRONICA SLIM AC 1400 LUMENS (SLIM AC REV01)',
+        categoryIds: ['cat_placas'],
+        quantity: 82,
+      );
+
+      const secondMatch = ProductModel(
+        id: 'p2',
+        name: 'MONTAGEM PLACA ELETRONICA SLIM 1000 18 LEDS 12/24VCA',
+        categoryIds: ['cat_montagem'],
+        quantity: 10,
+      );
+
+      const thirdMatch = ProductModel(
+        id: 'p3',
+        name: 'CIRCUITO IMPRESSO SLIM AC (SLIM AC 7.14 REV01)',
+        categoryIds: ['cat_pcb'],
+        categoryNames: ['Placa Eletrônica'],
+        quantity: 5,
+      );
+
+      const fourthMatch = ProductModel(
+        id: 'p4',
+        name: 'INDUTOR PTH SLIM AC (8X8)',
+        categoryIds: ['cat_indutores'],
+        notes: 'Placa eletronica slim ac',
+        quantity: 20,
+      );
+
+      const query = 'placa eletronica slim ac';
+
+      final score1 = bestMatch.searchRelevance(query);
+      final score2 = secondMatch.searchRelevance(query);
+      final score3 = thirdMatch.searchRelevance(query);
+      final score4 = fourthMatch.searchRelevance(query);
+
+      // A melhor coincidência deve ter pontuação muito maior que os outros
+      expect(score1, greaterThan(score2));
+      expect(score1, greaterThan(score3));
+      expect(score1, greaterThan(score4));
+
+      // Ordenando lista mista por relevância decrescente
+      final list = [fourthMatch, secondMatch, thirdMatch, bestMatch];
+      list.sort((a, b) => b.searchRelevance(query).compareTo(a.searchRelevance(query)));
+
+      expect(list.first.id, equals('p1'));
+      expect(list.first.name, contains('PLACA ELETRONICA SLIM AC'));
+    });
   });
 
   group('Category and Multiple Subcategories Model Tests', () {

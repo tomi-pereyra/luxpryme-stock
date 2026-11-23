@@ -276,7 +276,12 @@ class _TrashBinDialogState extends State<TrashBinDialog> {
                   final allTrash = snapshot.data ?? [];
                   final filteredTrash = _searchQuery.isEmpty
                       ? allTrash
-                      : allTrash.where((p) => p.matchesSearch(_searchQuery)).toList();
+                      : (allTrash.where((p) => p.matchesSearch(_searchQuery)).toList()
+                        ..sort((a, b) {
+                          final sDiff = b.searchRelevance(_searchQuery).compareTo(a.searchRelevance(_searchQuery));
+                          if (sDiff != 0) return sDiff;
+                          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+                        }));
 
                   if (filteredTrash.isEmpty) {
                     return Center(

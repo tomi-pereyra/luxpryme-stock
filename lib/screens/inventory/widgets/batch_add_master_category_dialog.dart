@@ -491,9 +491,14 @@ class _BatchAddMasterCategoryDialogState
 
                   final filteredProducts = _activeFilterQuery.isEmpty
                       ? scopedProducts
-                      : scopedProducts
+                      : (scopedProducts
                           .where((p) => p.matchesSearch(_activeFilterQuery))
-                          .toList();
+                          .toList()
+                        ..sort((a, b) {
+                          final sDiff = b.searchRelevance(_activeFilterQuery).compareTo(a.searchRelevance(_activeFilterQuery));
+                          if (sDiff != 0) return sDiff;
+                          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+                        }));
 
                   if (filteredProducts.isEmpty) {
                     return Center(

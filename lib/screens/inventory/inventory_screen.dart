@@ -26,6 +26,7 @@ import 'widgets/stock_conflict_dialog.dart';
 import 'widgets/trash_bin_dialog.dart';
 
 enum SortOption {
+  relevance('Melhor Coincidência'),
   nameAsc('Nome (A - Z)'),
   nameDesc('Nome (Z - A)'),
   quantityAsc('Menor Estoque'),
@@ -415,13 +416,39 @@ class _InventoryScreenState extends State<InventoryScreen> {
           p.subcategory == _selectedSubcategory).toList();
     }
 
-    // 3. Busca por Palavras Desordenadas (Nome, Código Interno, P/N, Subcategoria)
+    // 3. Busca Inteligente com Ranqueamento de Relevância (Melhor Coincidência no Topo)
     if (_searchQuery.isNotEmpty) {
       list = list.where((p) => p.matchesSearch(_searchQuery)).toList();
+
+      list.sort((a, b) {
+        final scoreA = a.searchRelevance(_searchQuery);
+        final scoreB = b.searchRelevance(_searchQuery);
+        final scoreDiff = scoreB.compareTo(scoreA); // Maior pontuação primeiro
+        if (scoreDiff != 0) return scoreDiff;
+
+        // Desempate secundário baseado na ordenação selecionada
+        switch (_selectedSort) {
+          case SortOption.relevance:
+          case SortOption.nameAsc:
+            return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+          case SortOption.nameDesc:
+            return b.name.toLowerCase().compareTo(a.name.toLowerCase());
+          case SortOption.quantityAsc:
+            return a.quantity.compareTo(b.quantity);
+          case SortOption.quantityDesc:
+            return b.quantity.compareTo(a.quantity);
+          case SortOption.recentlyUpdated:
+            final dateA = a.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final dateB = b.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+            return dateB.compareTo(dateA);
+        }
+      });
+      return list;
     }
 
-    // 3. Ordenação
+    // 4. Ordenação Padrão (quando não há texto na barra de busca)
     switch (_selectedSort) {
+      case SortOption.relevance:
       case SortOption.nameAsc:
         list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
         break;
