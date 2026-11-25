@@ -1140,12 +1140,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         color: AppColors.textSecondary),
                   ),
                   title: Text(
-                    'Sobre o Aplicativo',
+                    'Sobre o Aplicativo (v${AppConstants.appVersion})',
                     style: GoogleFonts.inter(
                         fontWeight: FontWeight.w700, fontSize: 14),
                   ),
                   subtitle: Text(
-                    '${AppConstants.appDeveloperRole}: ${AppConstants.appDeveloper}',
+                    'Versão ${AppConstants.appVersion} • ${AppConstants.appDeveloperRole}: ${AppConstants.appDeveloper}',
                     style: GoogleFonts.inter(
                         fontSize: 12, color: AppColors.textSecondary),
                   ),
@@ -1287,7 +1287,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                               style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800),
                             ),
                             Text(
-                              '${AppConstants.appDeveloperRole}: ${AppConstants.appDeveloper}',
+                              'v${AppConstants.appVersion} • ${AppConstants.appDeveloperRole}: ${AppConstants.appDeveloper}',
                               style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary),
                             ),
                           ],

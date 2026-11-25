@@ -303,7 +303,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     // Rodapé
                     Text(
-                      '${AppConstants.appName} • Indústria Eletrônica',
+                      '${AppConstants.appName} v${AppConstants.appVersion} • Indústria Eletrônica',
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         color: Colors.white70,

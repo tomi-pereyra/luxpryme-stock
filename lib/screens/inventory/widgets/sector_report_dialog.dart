@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -46,6 +47,101 @@ class SectorReportDialog extends StatefulWidget {
     );
   }
 
+  /// Utilitário compartilhado para salvar/exportar um arquivo PDF no Windows ou Android
+  static Future<String?> saveOrSharePdfFile({
+    required Uint8List pdfBytes,
+    required String fileName,
+  }) async {
+    if (!kIsWeb && Platform.isWindows) {
+      String defaultDirPath;
+      try {
+        final downloadsDir = await getDownloadsDirectory();
+        if (downloadsDir != null && await downloadsDir.exists()) {
+          defaultDirPath = downloadsDir.path;
+        } else {
+          final docsDir = await getApplicationDocumentsDirectory();
+          defaultDirPath = docsDir.path;
+        }
+      } catch (_) {
+        final docsDir = await getApplicationDocumentsDirectory();
+        defaultDirPath = docsDir.path;
+      }
+
+      String? targetPath;
+      try {
+        final safeFileName = fileName.replaceAll("'", '');
+        final safeDir = defaultDirPath.replaceAll("'", "''");
+        final psScript = '''
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Add-Type -AssemblyName System.Windows.Forms
+\$dlg = New-Object System.Windows.Forms.SaveFileDialog
+\$dlg.Title = 'Exportar Relatorio como PDF'
+\$dlg.Filter = 'Arquivo PDF (*.pdf)|*.pdf'
+\$dlg.DefaultExt = 'pdf'
+\$dlg.AddExtension = \$true
+\$dlg.FileName = '$safeFileName'
+\$dlg.InitialDirectory = '$safeDir'
+\$owner = New-Object System.Windows.Forms.Form -Property @{TopMost = \$true; ShowInTaskbar = \$false}
+\$res = \$dlg.ShowDialog(\$owner)
+\$owner.Dispose()
+if (\$res -eq [System.Windows.Forms.DialogResult]::OK) {
+  Write-Output \$dlg.FileName
+} else {
+  Write-Output '__CANCELLED__'
+}
+''';
+        final result = await Process.run(
+          'powershell',
+          ['-NoProfile', '-Sta', '-Command', psScript],
+          stdoutEncoding: utf8,
+          stderrEncoding: utf8,
+        );
+
+        final output = result.stdout.toString().trim();
+        if (output == '__CANCELLED__') {
+          return null; // Cancelado pelo usuário na janela Salvar Como
+        }
+        if (result.exitCode == 0 && output.isNotEmpty) {
+          targetPath = output.split(RegExp(r'[\r\n]+')).last.trim();
+        }
+      } catch (_) {
+        // Fallback automático para a pasta Downloads/Documentos
+      }
+
+      targetPath ??= '$defaultDirPath${Platform.pathSeparator}$fileName';
+      if (!targetPath.toLowerCase().endsWith('.pdf')) {
+        targetPath = '$targetPath.pdf';
+      }
+
+      final file = File(targetPath);
+      await file.writeAsBytes(pdfBytes, flush: true);
+
+      // Abre o arquivo PDF recém-exportado no visualizador padrão do Windows
+      try {
+        await Process.run('cmd', ['/c', 'start', '', targetPath]);
+      } catch (_) {}
+
+      return targetPath;
+    }
+
+    // Android / Mobile: salva cópia local e abre o menu nativo de salvar/compartilhar arquivo PDF
+    String? savedPath;
+    if (!kIsWeb) {
+      try {
+        final docs = await getApplicationDocumentsDirectory();
+        final file = File('${docs.path}/$fileName');
+        await file.writeAsBytes(pdfBytes, flush: true);
+        savedPath = file.path;
+      } catch (_) {}
+    }
+
+    await Printing.sharePdf(
+      bytes: pdfBytes,
+      filename: fileName,
+    );
+    return savedPath ?? fileName;
+  }
+
   /// Gera a lista de produtos filtrada por setor e status de arquivamento e ordenada conforme escolhido
   static List<ProductModel> buildSortedReportProducts({
     required List<ProductModel> sourceProducts,
@@ -82,6 +178,7 @@ class _SectorReportDialogState extends State<SectorReportDialog> {
   late String _selectedSectorId;
   SectorReportSortOrder _sortOrder = SectorReportSortOrder.byName;
   bool _isExporting = false;
+  bool _isPrinting = false;
 
   @override
   void initState() {
@@ -114,118 +211,162 @@ class _SectorReportDialogState extends State<SectorReportDialog> {
         .replaceAll(RegExp(r'[^\x20-\x7E\xA0-\xFF]'), '');
   }
 
-  Future<void> _exportPdf(List<ProductModel> reportItems, String sectorName) async {
-    setState(() => _isExporting = true);
-    try {
-      final doc = pw.Document();
-      final nowStr = DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now());
-      final totalUnits = reportItems.fold<int>(0, (acc, p) => acc + p.quantity);
-      final reportTitle = widget.isArchived
-          ? 'Relatório de Produtos Arquivados - Setor: $sectorName'
-          : 'Relatório de Estoque do Setor: $sectorName';
+  Future<({Uint8List bytes, String fileName})> _buildPdfDocument(
+    List<ProductModel> reportItems,
+    String sectorName,
+  ) async {
+    final doc = pw.Document();
+    final nowStr = DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now());
+    final totalUnits = reportItems.fold<int>(0, (acc, p) => acc + p.quantity);
+    final reportTitle = widget.isArchived
+        ? 'Relatório de Produtos Arquivados - Setor: $sectorName'
+        : 'Relatório de Estoque do Setor: $sectorName';
 
-      final headers = ['Código Interno', 'Nome do Produto', 'Qtd. Estoque'];
-      final rows = reportItems.map((p) {
-        final code = (p.internalCode ?? p.code ?? '').trim();
-        return [
-          _sanitizePdfText(code.isEmpty ? '-' : code),
-          _sanitizePdfText(p.name),
-          '${p.quantity}',
-        ];
-      }).toList();
+    final headers = ['Código Interno', 'Nome do Produto', 'Qtd. Estoque'];
+    final rows = reportItems.map((p) {
+      final code = (p.internalCode ?? p.code ?? '').trim();
+      return [
+        _sanitizePdfText(code.isEmpty ? '-' : code),
+        _sanitizePdfText(p.name),
+        '${p.quantity}',
+      ];
+    }).toList();
 
-      doc.addPage(
-        pw.MultiPage(
-          pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(28),
-          header: (ctx) => pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text(
-                    _sanitizePdfText(AppConstants.appName),
-                    style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900),
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(28),
+        header: (ctx) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text(
+                  _sanitizePdfText('${AppConstants.appName} v${AppConstants.appVersion}'),
+                  style: pw.TextStyle(
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.blue900,
                   ),
-                  pw.Text(
-                    'Gerado em: $nowStr',
-                    style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
-                  ),
-                ],
-              ),
-              pw.SizedBox(height: 4),
-              pw.Text(
-                _sanitizePdfText(reportTitle),
-                style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
-              ),
-              pw.SizedBox(height: 2),
-              pw.Text(
-                _sanitizePdfText(
-                  'Ordenação: ${_sortOrder.label}  |  Itens: ${reportItems.length}  |  Soma em estoque: $totalUnits un',
                 ),
-                style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey800),
-              ),
-              pw.SizedBox(height: 8),
-              pw.Divider(height: 1, color: PdfColors.grey400),
-              pw.SizedBox(height: 6),
-            ],
-          ),
-          footer: (ctx) => pw.Container(
-            alignment: pw.Alignment.centerRight,
-            margin: const pw.EdgeInsets.only(top: 8),
-            child: pw.Text(
-              'Página ${ctx.pageNumber} de ${ctx.pagesCount}',
-              style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+                pw.Text(
+                  'Gerado em: $nowStr',
+                  style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
+                ),
+              ],
             ),
-          ),
-          build: (ctx) => [
-            pw.TableHelper.fromTextArray(
-              headers: headers.map(_sanitizePdfText).toList(),
-              data: rows,
-              border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
-              headerStyle: pw.TextStyle(
-                fontSize: 9.5,
-                fontWeight: pw.FontWeight.bold,
-                color: PdfColors.white,
-              ),
-              headerDecoration: const pw.BoxDecoration(color: PdfColors.blue800),
-              cellStyle: const pw.TextStyle(fontSize: 9),
-              cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              columnWidths: {
-                0: const pw.FixedColumnWidth(90),
-                1: const pw.FlexColumnWidth(4),
-                2: const pw.FixedColumnWidth(75),
-              },
-              cellAlignments: {
-                0: pw.Alignment.centerLeft,
-                1: pw.Alignment.centerLeft,
-                2: pw.Alignment.centerRight,
-              },
+            pw.SizedBox(height: 4),
+            pw.Text(
+              _sanitizePdfText(reportTitle),
+              style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
             ),
+            pw.SizedBox(height: 2),
+            pw.Text(
+              _sanitizePdfText(
+                'Ordenação: ${_sortOrder.label}  |  Itens: ${reportItems.length}  |  Soma em estoque: $totalUnits un',
+              ),
+              style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey800),
+            ),
+            pw.SizedBox(height: 8),
+            pw.Divider(height: 1, color: PdfColors.grey400),
+            pw.SizedBox(height: 6),
           ],
         ),
+        footer: (ctx) => pw.Container(
+          alignment: pw.Alignment.centerRight,
+          margin: const pw.EdgeInsets.only(top: 8),
+          child: pw.Text(
+            'Página ${ctx.pageNumber} de ${ctx.pagesCount}',
+            style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+          ),
+        ),
+        build: (ctx) => [
+          pw.TableHelper.fromTextArray(
+            headers: headers.map(_sanitizePdfText).toList(),
+            data: rows,
+            border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+            headerStyle: pw.TextStyle(
+              fontSize: 9.5,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColors.white,
+            ),
+            headerDecoration: const pw.BoxDecoration(color: PdfColors.blue800),
+            cellStyle: const pw.TextStyle(fontSize: 9),
+            cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            columnWidths: {
+              0: const pw.FixedColumnWidth(90),
+              1: const pw.FlexColumnWidth(4),
+              2: const pw.FixedColumnWidth(75),
+            },
+            cellAlignments: {
+              0: pw.Alignment.centerLeft,
+              1: pw.Alignment.centerLeft,
+              2: pw.Alignment.centerRight,
+            },
+          ),
+        ],
+      ),
+    );
+
+    final slug = InventoryService.instance.generateMasterCategorySlug(sectorName);
+    final prefix = widget.isArchived ? 'relatorio_arquivados' : 'relatorio_setor';
+    final fileName = '${prefix}_${slug}_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.pdf';
+    final bytes = await doc.save();
+    return (bytes: bytes, fileName: fileName);
+  }
+
+  Future<void> _exportPdfFile(List<ProductModel> reportItems, String sectorName) async {
+    setState(() => _isExporting = true);
+    try {
+      final pdfData = await _buildPdfDocument(reportItems, sectorName);
+      final savedPath = await SectorReportDialog.saveOrSharePdfFile(
+        pdfBytes: pdfData.bytes,
+        fileName: pdfData.fileName,
       );
 
-      final slug = InventoryService.instance.generateMasterCategorySlug(sectorName);
-      final prefix = widget.isArchived ? 'relatorio_arquivados' : 'relatorio_setor';
-      final fileName = '${prefix}_${slug}_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.pdf';
+      if (savedPath != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.stockNormal,
+            content: Text('PDF exportado com sucesso em: $savedPath'),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.stockZero,
+            content: Text('Erro ao exportar PDF: $e'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
+  }
 
+  Future<void> _printPdf(List<ProductModel> reportItems, String sectorName) async {
+    setState(() => _isPrinting = true);
+    try {
+      final pdfData = await _buildPdfDocument(reportItems, sectorName);
       await Printing.layoutPdf(
-        name: fileName,
-        onLayout: (format) async => doc.save(),
+        name: pdfData.fileName,
+        onLayout: (format) async => pdfData.bytes,
       );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: AppColors.stockZero,
-            content: Text('Erro ao gerar PDF: $e'),
+            content: Text('Erro ao imprimir PDF: $e'),
           ),
         );
       }
     } finally {
-      if (mounted) setState(() => _isExporting = false);
+      if (mounted) setState(() => _isPrinting = false);
     }
   }
 
@@ -617,6 +758,19 @@ class _SectorReportDialogState extends State<SectorReportDialog> {
                                 ? null
                                 : () => _exportCsv(reportItems, sectorName),
                           ),
+                          OutlinedButton.icon(
+                            icon: _isPrinting
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.print_outlined, size: 18),
+                            label: Text(_isPrinting ? 'Imprimindo...' : 'Imprimir'),
+                            onPressed: (reportItems.isEmpty || _isPrinting || _isExporting)
+                                ? null
+                                : () => _printPdf(reportItems, sectorName),
+                          ),
                           ElevatedButton.icon(
                             icon: _isExporting
                                 ? const SizedBox(
@@ -628,10 +782,10 @@ class _SectorReportDialogState extends State<SectorReportDialog> {
                                     ),
                                   )
                                 : const Icon(Icons.picture_as_pdf_outlined, size: 18),
-                            label: Text(_isExporting ? 'Gerando PDF...' : 'Gerar PDF / Imprimir'),
-                            onPressed: (reportItems.isEmpty || _isExporting)
+                            label: Text(_isExporting ? 'Exportando PDF...' : 'Exportar PDF'),
+                            onPressed: (reportItems.isEmpty || _isExporting || _isPrinting)
                                 ? null
-                                : () => _exportPdf(reportItems, sectorName),
+                                : () => _exportPdfFile(reportItems, sectorName),
                           ),
                         ],
                       ),

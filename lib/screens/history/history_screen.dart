@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/app_constants.dart';
 import '../../data/models/category_model.dart';
 import '../../data/models/stock_movement_model.dart';
 import '../../data/services/inventory_service.dart';
+import '../inventory/widgets/sector_report_dialog.dart';
 
 enum HistoryPeriodFilter {
   all('Todo o Período'),
@@ -302,6 +306,148 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return filtered;
   }
 
+  String _sanitizePdfText(String input) {
+    return input
+        .replaceAll('–', '-')
+        .replaceAll('—', '-')
+        .replaceAll('“', '"')
+        .replaceAll('”', '"')
+        .replaceAll('’', "'")
+        .replaceAll('‘', "'")
+        .replaceAll('•', '-')
+        .replaceAll(RegExp(r'[^\x20-\x7E\xA0-\xFF]'), '');
+  }
+
+  Future<void> _exportMovementsPdf(
+    List<StockMovementModel> filteredList, {
+    required int totalEntries,
+    required int totalExits,
+    required int balance,
+  }) async {
+    try {
+      final doc = pw.Document();
+      final nowStr = DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now());
+      final periodLabel = _selectedPeriod == HistoryPeriodFilter.custom && _selectedSpecificDate != null
+          ? DateFormat('dd/MM/yyyy').format(_selectedSpecificDate!)
+          : _selectedPeriod.label;
+
+      final headers = ['Data / Hora', 'Cód. Int.', 'Produto', 'Qtd', 'Origem', 'Operador', 'Obs.'];
+      final rows = filteredList.map((m) {
+        final dt = DateFormat('dd/MM/yy HH:mm').format(m.createdAt);
+        final isCart = m.type.toUpperCase().startsWith('CART_');
+        final origin = isCart ? 'Carrinho' : 'Ajuste Direto';
+        final qtyStr = '${m.delta >= 0 ? "+" : ""}${m.delta}';
+        return [
+          dt,
+          _sanitizePdfText((m.internalCode ?? '-').trim().isEmpty ? '-' : m.internalCode!.trim()),
+          _sanitizePdfText(m.productName),
+          qtyStr,
+          origin,
+          _sanitizePdfText(m.operatorName),
+          _sanitizePdfText((m.notes ?? '').trim()),
+        ];
+      }).toList();
+
+      doc.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(24),
+          header: (ctx) => pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text(
+                    _sanitizePdfText('${AppConstants.appName} v${AppConstants.appVersion}'),
+                    style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900),
+                  ),
+                  pw.Text(
+                    'Gerado em: $nowStr',
+                    style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 4),
+              pw.Text(
+                'Relatorio de Movimentacao de Estoque',
+                style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
+              ),
+              pw.SizedBox(height: 2),
+              pw.Text(
+                _sanitizePdfText(
+                  'Periodo: $periodLabel | Operador: ${_selectedOperator ?? "Todos"} | Registros: ${filteredList.length} | Entradas: +$totalEntries un | Saidas: -$totalExits un | Saldo: ${balance >= 0 ? "+" : ""}$balance un',
+                ),
+                style: const pw.TextStyle(fontSize: 8.5, color: PdfColors.grey800),
+              ),
+              pw.SizedBox(height: 6),
+              pw.Divider(height: 1, color: PdfColors.grey400),
+              pw.SizedBox(height: 6),
+            ],
+          ),
+          footer: (ctx) => pw.Container(
+            alignment: pw.Alignment.centerRight,
+            margin: const pw.EdgeInsets.only(top: 8),
+            child: pw.Text(
+              'Pagina ${ctx.pageNumber} de ${ctx.pagesCount}',
+              style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+            ),
+          ),
+          build: (ctx) => [
+            pw.TableHelper.fromTextArray(
+              headers: headers.map(_sanitizePdfText).toList(),
+              data: rows,
+              border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+              headerStyle: pw.TextStyle(
+                fontSize: 8.5,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.white,
+              ),
+              headerDecoration: const pw.BoxDecoration(color: PdfColors.blue800),
+              cellStyle: const pw.TextStyle(fontSize: 8),
+              cellPadding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+              columnWidths: {
+                0: const pw.FixedColumnWidth(68),
+                1: const pw.FixedColumnWidth(48),
+                2: const pw.FlexColumnWidth(3),
+                3: const pw.FixedColumnWidth(38),
+                4: const pw.FixedColumnWidth(56),
+                5: const pw.FixedColumnWidth(68),
+                6: const pw.FlexColumnWidth(1.6),
+              },
+            ),
+          ],
+        ),
+      );
+
+      final fileName = 'relatorio_movimentacoes_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.pdf';
+      final bytes = await doc.save();
+      final savedPath = await SectorReportDialog.saveOrSharePdfFile(
+        pdfBytes: bytes,
+        fileName: fileName,
+      );
+
+      if (savedPath != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.stockNormal,
+            content: Text('PDF exportado com sucesso em: $savedPath'),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.stockZero,
+            content: Text('Erro ao exportar PDF: $e'),
+          ),
+        );
+      }
+    }
+  }
+
   void _showReportDialog(List<StockMovementModel> filteredList) {
     int totalEntries = 0;
     int totalExits = 0;
@@ -445,9 +591,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
               onPressed: () => Navigator.of(ctx).pop(),
               child: const Text('Fechar'),
             ),
-            ElevatedButton.icon(
+            OutlinedButton.icon(
               icon: const Icon(Icons.copy, size: 16),
-              label: const Text('Copiar Relatório CSV'),
+              label: const Text('Copiar CSV'),
               onPressed: () {
                 final csvBuffer = StringBuffer();
                 csvBuffer.writeln('Data;Hora;Produto;Codigo_Int;Part_Number;Qtd;Tipo;Origem;Operador;Observacao');
@@ -467,6 +613,21 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   ),
                 );
               },
+            ),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+              label: const Text('Exportar PDF'),
+              onPressed: filteredList.isEmpty
+                  ? null
+                  : () {
+                      Navigator.of(ctx).pop();
+                      _exportMovementsPdf(
+                        filteredList,
+                        totalEntries: totalEntries,
+                        totalExits: totalExits,
+                        balance: balance,
+                      );
+                    },
             ),
           ],
         );
