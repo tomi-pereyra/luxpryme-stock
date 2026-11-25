@@ -1023,36 +1023,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     child: const Icon(Icons.archive_outlined,
                         color: Color(0xFFB45309)),
                   ),
-                  title: Row(
-                    children: [
-                      Text(
-                        'Arquivados',
-                        style: GoogleFonts.inter(
-                            fontWeight: FontWeight.w700, fontSize: 14),
-                      ),
-                      const SizedBox(width: 8),
-                      Builder(
-                        builder: (_) {
-                          final archCount = InventoryService.instance.archivedProducts.length;
-                          if (archCount == 0) return const SizedBox.shrink();
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFB45309),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              '$archCount',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
+                  title: Text(
+                    'Arquivados',
+                    style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w700, fontSize: 14),
                   ),
                   subtitle: Text(
                     'Produtos fora de uso divididos por setor e editáveis',
@@ -1385,49 +1359,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       ),
                     ),
 
-                    // Botão Produtos Arquivados com Badge
-                    StreamBuilder<List<ProductModel>>(
-                      stream: InventoryService.instance.streamProducts(),
-                      builder: (context, archSnap) {
-                        final archCount = (archSnap.data ?? InventoryService.instance.currentProducts)
-                            .where((p) => p.isArchived)
-                            .length;
-                        return Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.archive_outlined),
-                              tooltip: 'Produtos Arquivados',
-                              onPressed: _openArchivedScreen,
-                            ),
-                            if (archCount > 0)
-                              Positioned(
-                                right: 6,
-                                top: 8,
-                                child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: const BoxDecoration(
-                                    color: Color(0xFFB45309),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  constraints: const BoxConstraints(
-                                    minWidth: 16,
-                                    minHeight: 16,
-                                  ),
-                                  child: Text(
-                                    '$archCount',
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        );
-                      },
+                    // Botão Produtos Arquivados (sem badge de quantidade)
+                    IconButton(
+                      icon: const Icon(Icons.archive_outlined),
+                      tooltip: 'Produtos Arquivados',
+                      onPressed: _openArchivedScreen,
                     ),
 
                     // Botão Histórico e Relatórios
