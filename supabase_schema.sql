@@ -61,6 +61,7 @@ ALTER TABLE public.products ADD COLUMN IF NOT EXISTS master_categories TEXT[] DE
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS category_ids UUID[] DEFAULT ARRAY[]::UUID[];
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS subcategories TEXT[] DEFAULT ARRAY[]::TEXT[];
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS subcategory TEXT;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false;
 
 -- 3. Tabela de PINs de Operadores para Baixa no Carrinho
 CREATE TABLE IF NOT EXISTS public.operator_pins (

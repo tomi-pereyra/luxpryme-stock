@@ -290,6 +290,16 @@ class LocalCacheService {
     }
   }
 
+  Future<void> savePendingSyncActions(List<Map<String, dynamic>> actions) async {
+    try {
+      final dir = await _getCacheDirectory();
+      final file = _getFile(dir, 'pending_sync_queue.json');
+      await file.writeAsString(jsonEncode(actions));
+    } catch (e) {
+      debugPrint('Erro ao atualizar fila de sincronização: $e');
+    }
+  }
+
   Future<void> clearPendingSyncActions() async {
     try {
       final dir = await _getCacheDirectory();

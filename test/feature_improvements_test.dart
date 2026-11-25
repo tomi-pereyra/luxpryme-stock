@@ -8,6 +8,7 @@ import 'package:luxpryme_stock/data/models/stock_movement_model.dart';
 import 'package:luxpryme_stock/data/models/cart_item_model.dart';
 import 'package:luxpryme_stock/data/services/inventory_service.dart';
 import 'package:luxpryme_stock/data/services/local_cache_service.dart';
+import 'package:luxpryme_stock/screens/inventory/widgets/sector_report_dialog.dart';
 
 void main() {
   group('Tokenized Unordered Search Tests', () {
@@ -1063,6 +1064,236 @@ void main() {
       expect((grouped.first as List).length, equals(3));
       expect(grouped.last is StockMovementModel, isTrue);
       expect((grouped.last as StockMovementModel).id, equals('mov-4'));
+    });
+  });
+
+  group('Arquivados, Edição de Categorias/Setores/PINs, Filtro por Setor e Relatórios Tests', () {
+    test('Arquivar produto mantém setor, permite modificar quantidade/setor/categorias e desarquivar', () async {
+      final service = InventoryService.instance;
+      service.setMode(localMode: true);
+
+      final cat = await service.createCategory(
+        name: 'Cat Arquivados Teste',
+        masterCategories: ['eletronica'],
+      );
+
+      final prod = ProductModel(
+        id: 'prod-arch-1',
+        name: 'Placa Legada V1',
+        internalCode: '9001',
+        masterCategories: const ['eletronica'],
+        categoryIds: [cat.id],
+        quantity: 45,
+      );
+
+      await service.createProduct(prod, pin: '2026');
+      expect(service.activeProducts.any((p) => p.id == 'prod-arch-1'), isTrue);
+      expect(service.archivedProducts.any((p) => p.id == 'prod-arch-1'), isFalse);
+
+      // 1. Arquiva o produto
+      final archived = await service.archiveProduct('prod-arch-1', pin: '2026');
+      expect(archived.isArchived, isTrue);
+      expect(archived.masterCategories, contains('eletronica'));
+      expect(service.activeProducts.any((p) => p.id == 'prod-arch-1'), isFalse);
+      expect(service.archivedProducts.any((p) => p.id == 'prod-arch-1'), isTrue);
+
+      // Serialização Supabase preserva tag __archived__ e setor real
+      final supaMap = archived.toMap(forSupabase: true);
+      expect(supaMap['master_categories'], containsAll(['eletronica', '__archived__']));
+      final roundTrip = ProductModel.fromMap(supaMap);
+      expect(roundTrip.isArchived, isTrue);
+      expect(roundTrip.masterCategories, equals(['eletronica']));
+
+      // 2. Modifica produto enquanto arquivado (quantidade, setor e categorias)
+      await service.quickAdjustUnit(product: archived, delta: -5);
+      await service.moveProductMasterCategories(
+        productId: 'prod-arch-1',
+        masterCategories: ['producao'],
+      );
+      final modifiedArch = service.archivedProducts.firstWhere((p) => p.id == 'prod-arch-1');
+      expect(modifiedArch.isArchived, isTrue);
+      expect(modifiedArch.quantity, equals(40));
+      expect(modifiedArch.masterCategories, equals(['producao']));
+
+      // 3. Desarquiva de volta ao estoque ativo
+      final unarchived = await service.unarchiveProduct('prod-arch-1', pin: '2026');
+      expect(unarchived.isArchived, isFalse);
+      expect(service.activeProducts.any((p) => p.id == 'prod-arch-1'), isTrue);
+      expect(service.archivedProducts.any((p) => p.id == 'prod-arch-1'), isFalse);
+    });
+
+    test('Renomear categoria e excluir categoria mesmo com produtos vinculados', () async {
+      final service = InventoryService.instance;
+      service.setMode(localMode: true);
+
+      final cat = await service.createCategory(
+        name: 'Categoria Temporaria',
+        masterCategories: ['producao'],
+      );
+
+      final prod = ProductModel(
+        id: 'prod-cat-del-1',
+        name: 'Parafuso M3 Inox',
+        masterCategories: const ['producao'],
+        categoryIds: [cat.id],
+        categoryNames: [cat.name],
+        quantity: 200,
+      );
+      await service.createProduct(prod, pin: '2026');
+
+      // Renomear categoria atualiza a categoria e propaga nos produtos
+      final renamed = await service.updateCategory(
+        id: cat.id,
+        name: 'Fixadores Industriais M3',
+      );
+      expect(renamed.name, equals('Fixadores Industriais M3'));
+      final prodAfterRename = service.currentProducts.firstWhere((p) => p.id == 'prod-cat-del-1');
+      expect(prodAfterRename.categoryNames, contains('Fixadores Industriais M3'));
+
+      // Excluir categoria mesmo tendo produto vinculado: desvincula sem apagar o produto!
+      final unlinkedCount = await service.deleteCategory(cat.id);
+      expect(unlinkedCount, greaterThanOrEqualTo(1));
+      expect(service.currentCategories.any((c) => c.id == cat.id), isFalse);
+
+      final prodAfterCatDelete = service.currentProducts.firstWhere((p) => p.id == 'prod-cat-del-1');
+      expect(prodAfterCatDelete.categoryIds, isNot(contains(cat.id)));
+      expect(prodAfterCatDelete.quantity, equals(200));
+    });
+
+    test('Filtro de categorias por setor retorna apenas categorias cadastradas no setor', () async {
+      final service = InventoryService.instance;
+      service.setMode(localMode: true);
+
+      final catElet = CategoryModel(
+        id: 'c-only-elet',
+        name: 'Semicondutores SMD',
+        masterCategories: const ['eletronica'],
+      );
+      final catProd = CategoryModel(
+        id: 'c-only-prod',
+        name: 'Lentes Acrilicas',
+        masterCategories: const ['producao'],
+      );
+      final catUsedByProd = const CategoryModel(
+        id: 'c-used-prod',
+        name: 'Difusores',
+      );
+
+      final sampleProds = [
+        const ProductModel(
+          id: 'sp-1',
+          name: 'Difusor Slim',
+          masterCategories: ['producao'],
+          categoryIds: ['c-used-prod'],
+          quantity: 10,
+        ),
+      ];
+
+      final eletCats = service.getCategoriesForSector(
+        'eletronica',
+        allCategories: [catElet, catProd, catUsedByProd],
+        products: sampleProds,
+        onlyArchived: false,
+      );
+      expect(eletCats.map((c) => c.id), equals(['c-only-elet']));
+
+      final prodCats = service.getCategoriesForSector(
+        'producao',
+        allCategories: [catElet, catProd, catUsedByProd],
+        products: sampleProds,
+        onlyArchived: false,
+      );
+      expect(prodCats.map((c) => c.id).toSet(), equals({'c-only-prod', 'c-used-prod'}));
+    });
+
+    test('Editar nome de funcionário com PIN e refletir renomeação de setor', () async {
+      final service = InventoryService.instance;
+      service.setMode(localMode: true);
+
+      await service.createOperatorPin(
+        name: 'Carlos Antigo',
+        pin: '7788',
+        masterCategory: 'eletronica',
+      );
+
+      final created = (await service.validatePin('7788'))!;
+      final updated = await service.updateOperatorPin(
+        id: created.id,
+        name: 'Carlos Eduardo (Líder PTH)',
+        pin: '7799',
+        masterCategory: 'eletronica',
+      );
+
+      expect(updated.name, equals('Carlos Eduardo (Líder PTH)'));
+      expect(await service.validatePin('7788'), isNull);
+      final validatedNew = await service.validatePin('7799');
+      expect(validatedNew, isNotNull);
+      expect(validatedNew!.name, equals('Carlos Eduardo (Líder PTH)'));
+    });
+
+    test('Relatório de setor e arquivados ordena por Código Interno (numérico natural) ou Nome', () {
+      const items = [
+        ProductModel(
+          id: 'r1',
+          name: 'Zeta Componente',
+          internalCode: '100',
+          masterCategories: ['eletronica'],
+          categoryIds: [],
+          quantity: 15,
+          isArchived: false,
+        ),
+        ProductModel(
+          id: 'r2',
+          name: 'Alfa Componente',
+          internalCode: '25',
+          masterCategories: ['eletronica'],
+          categoryIds: [],
+          quantity: 80,
+          isArchived: false,
+        ),
+        ProductModel(
+          id: 'r3',
+          name: 'Beta Sem Codigo',
+          internalCode: null,
+          masterCategories: ['eletronica'],
+          categoryIds: [],
+          quantity: 5,
+          isArchived: false,
+        ),
+        ProductModel(
+          id: 'r4',
+          name: 'Item Arquivado Antigo',
+          internalCode: '10',
+          masterCategories: ['eletronica'],
+          categoryIds: [],
+          quantity: 12,
+          isArchived: true,
+        ),
+      ];
+
+      final byCode = SectorReportDialog.buildSortedReportProducts(
+        sourceProducts: items,
+        sectorId: 'eletronica',
+        isArchived: false,
+        sortOrder: SectorReportSortOrder.byInternalCode,
+      );
+      expect(byCode.map((p) => p.id).toList(), equals(['r2', 'r1', 'r3']));
+
+      final byName = SectorReportDialog.buildSortedReportProducts(
+        sourceProducts: items,
+        sectorId: 'eletronica',
+        isArchived: false,
+        sortOrder: SectorReportSortOrder.byName,
+      );
+      expect(byName.map((p) => p.id).toList(), equals(['r2', 'r3', 'r1']));
+
+      final archivedReport = SectorReportDialog.buildSortedReportProducts(
+        sourceProducts: items,
+        sectorId: 'eletronica',
+        isArchived: true,
+        sortOrder: SectorReportSortOrder.byInternalCode,
+      );
+      expect(archivedReport.map((p) => p.id).toList(), equals(['r4']));
     });
   });
 }

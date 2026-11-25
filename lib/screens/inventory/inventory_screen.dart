@@ -13,6 +13,7 @@ import '../../data/services/cart_service.dart';
 import '../../data/services/inventory_service.dart';
 import '../admin/admin_panel_screen.dart';
 import '../history/history_screen.dart';
+import 'archived_products_screen.dart';
 import 'widgets/cart_modal.dart';
 import 'widgets/categories_manage_dialog.dart';
 import 'widgets/master_categories_manage_dialog.dart';
@@ -22,6 +23,7 @@ import 'widgets/product_form_dialog.dart';
 import 'widgets/pin_confirmation_dialog.dart';
 import 'widgets/library_mode_screen.dart';
 import 'widgets/batch_add_master_category_dialog.dart';
+import 'widgets/sector_report_dialog.dart';
 import 'widgets/stock_conflict_dialog.dart';
 import 'widgets/trash_bin_dialog.dart';
 
@@ -54,6 +56,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   final Set<String> _customSubcategories = {};
   SortOption _selectedSort = SortOption.nameAsc;
   bool _isMobileSearchActive = false;
+  bool _isSyncing = false;
 
   bool get isWindowsDesktop => !kIsWeb && Platform.isWindows;
 
@@ -106,10 +109,19 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   void _openLibraryMode(
       List<CategoryModel> categories, List<ProductModel> products) {
+    final sectorProducts = _selectedMasterCategory == 'todas'
+        ? products
+        : products.where((p) => p.masterCategories.contains(_selectedMasterCategory)).toList();
+    final sectorCategories = InventoryService.instance.getCategoriesForSector(
+      _selectedMasterCategory,
+      allCategories: categories,
+      products: products,
+      onlyArchived: false,
+    );
     LibraryModeScreen.open(
       context,
-      categories: categories,
-      products: products,
+      categories: sectorCategories,
+      products: sectorProducts,
       initialCategoryId: _selectedCategoryId,
       initialSubcategory: _selectedSubcategory,
       onSelect: (categoryId, subcategory) {
@@ -121,12 +133,48 @@ class _InventoryScreenState extends State<InventoryScreen> {
     );
   }
 
+  void _openArchivedScreen() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ArchivedProductsScreen(
+          initialSectorId: _selectedMasterCategory,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleManualSync() async {
+    if (_isSyncing) return;
+    setState(() => _isSyncing = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await InventoryService.instance.syncAllWithSupabase();
+      messenger.showSnackBar(
+        const SnackBar(
+          backgroundColor: AppColors.stockNormal,
+          content: Text('Estoque sincronizado com o Supabase com sucesso!'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.stockZero,
+          content: Text('Erro ao sincronizar: ${e.toString().replaceAll("Exception: ", "")}'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSyncing = false);
+    }
+  }
+
   void _openAddProductDialog(List<CategoryModel> categories) {
     showDialog(
       context: context,
       builder: (_) => ProductFormDialog(
         categories: categories,
         initialCategoryId: _selectedCategoryId,
+        initialSectorId: _selectedMasterCategory,
       ),
     );
   }
@@ -140,6 +188,41 @@ class _InventoryScreenState extends State<InventoryScreen> {
         categories: categories,
       ),
     );
+  }
+
+  Future<void> _handleArchiveProduct(ProductModel product) async {
+    final pin = await PinConfirmationDialog.show(
+      context,
+      title: 'Arquivar Produto',
+      subtitle: 'O item continuará salvo com seu saldo e setor na seção "Arquivados". Digite seu PIN de 4 dígitos:',
+      itemName: product.name,
+      actionLabel: 'Arquivar Item',
+      actionColor: const Color(0xFFD97706),
+      actionIcon: Icons.archive_outlined,
+    );
+
+    if (pin == null) return;
+
+    try {
+      await InventoryService.instance.archiveProduct(product.id, pin: pin);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.stockNormal,
+            content: Text('Item "${product.name}" movido para Arquivados!'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.stockZero,
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _handleDeleteProduct(ProductModel product) async {
@@ -307,6 +390,16 @@ class _InventoryScreenState extends State<InventoryScreen> {
       onTap: () {
         setState(() {
           _selectedMasterCategory = id;
+          if (_selectedCategoryId != null && id != 'todas') {
+            final validCats = InventoryService.instance.getCategoriesForSector(
+              id,
+              onlyArchived: false,
+            );
+            if (!validCats.any((c) => c.id == _selectedCategoryId)) {
+              _selectedCategoryId = null;
+              _selectedSubcategory = null;
+            }
+          }
         });
       },
       onLongPress: onLongPress,
@@ -483,6 +576,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
         ? rawProducts
         : rawProducts.where((p) => p.masterCategories.contains(masterCatId)).toList();
 
+    final sectorCategories = InventoryService.instance.getCategoriesForSector(
+      masterCatId,
+      allCategories: categories,
+      products: rawProducts,
+      onlyArchived: false,
+    );
+
     final subcats = <String>{};
     for (final p in prodsInMaster) {
       subcats.addAll(p.subcategories);
@@ -558,7 +658,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 Expanded(
                   child: ListView(
                     children: [
-                      ...categories.map((cat) {
+                      ...sectorCategories.map((cat) {
                         final isSelected = _selectedCategoryId == cat.id;
                         final count = prodsInMaster
                             .where((p) => p.categoryIds.contains(cat.id))
@@ -805,7 +905,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         fontWeight: FontWeight.w700, fontSize: 14),
                   ),
                   subtitle: Text(
-                    'Gerenciar categorias e tipos comuns',
+                    'Criar, renomear ou excluir categorias deste setor',
                     style: GoogleFonts.inter(
                         fontSize: 12, color: AppColors.textSecondary),
                   ),
@@ -813,7 +913,69 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     Navigator.pop(ctx);
                     showDialog(
                       context: context,
-                      builder: (_) => const CategoriesManageDialog(),
+                      builder: (_) => CategoriesManageDialog(
+                        initialSectorId: _selectedMasterCategory,
+                      ),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+
+                // 3b. Gerenciar Setores
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE0F2FE),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.dashboard_customize_outlined,
+                        color: Color(0xFF0284C7)),
+                  ),
+                  title: Text(
+                    'Gerenciar Setores',
+                    style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w700, fontSize: 14),
+                  ),
+                  subtitle: Text(
+                    'Criar, renomear ou remover setores da fábrica',
+                    style: GoogleFonts.inter(
+                        fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    MasterCategoriesManageDialog.show(context);
+                  },
+                ),
+                const Divider(height: 1),
+
+                // 3c. Relatório de Setor Completo
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDBEAFE),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.assessment_outlined,
+                        color: AppColors.primary),
+                  ),
+                  title: Text(
+                    'Relatório de Setor',
+                    style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w700, fontSize: 14),
+                  ),
+                  subtitle: Text(
+                    'Gerar relatório completo por Código Interno ou Nome',
+                    style: GoogleFonts.inter(
+                        fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    SectorReportDialog.show(
+                      context,
+                      initialSectorId: _selectedMasterCategory,
+                      isArchived: false,
                     );
                   },
                 ),
@@ -842,10 +1004,100 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   ),
                   onTap: () {
                     Navigator.pop(ctx);
-                    _openLibraryMode(categories, rawProducts);
+                    _openLibraryMode(
+                      categories,
+                      rawProducts.where((p) => !p.isArchived).toList(),
+                    );
                   },
                 ),
                 const Divider(height: 1),
+
+                // 4b. Produtos Arquivados
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.archive_outlined,
+                        color: Color(0xFFB45309)),
+                  ),
+                  title: Row(
+                    children: [
+                      Text(
+                        'Arquivados',
+                        style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w700, fontSize: 14),
+                      ),
+                      const SizedBox(width: 8),
+                      Builder(
+                        builder: (_) {
+                          final archCount = InventoryService.instance.archivedProducts.length;
+                          if (archCount == 0) return const SizedBox.shrink();
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFB45309),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '$archCount',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  subtitle: Text(
+                    'Produtos fora de uso divididos por setor e editáveis',
+                    style: GoogleFonts.inter(
+                        fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _openArchivedScreen();
+                  },
+                ),
+                const Divider(height: 1),
+
+                if (InventoryService.instance.isAdminUser) ...[
+                  ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFDCFCE7),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.badge_outlined,
+                          color: Color(0xFF15803D)),
+                    ),
+                    title: Text(
+                      'Funcionários e PINs',
+                      style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w700, fontSize: 14),
+                    ),
+                    subtitle: Text(
+                      'Cadastrar ou editar nomes e PINs de operadores',
+                      style: GoogleFonts.inter(
+                          fontSize: 12, color: AppColors.textSecondary),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const AdminPanelScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  const Divider(height: 1),
+                ],
 
                 // 5. Lixeira de Produtos
                 ListTile(
@@ -1122,10 +1374,66 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       },
                     ),
 
+                    // Botão Relatório de Setor
+                    IconButton(
+                      icon: const Icon(Icons.assessment_outlined),
+                      tooltip: 'Gerar Relatório de Setor',
+                      onPressed: () => SectorReportDialog.show(
+                        context,
+                        initialSectorId: _selectedMasterCategory,
+                        isArchived: false,
+                      ),
+                    ),
+
+                    // Botão Produtos Arquivados com Badge
+                    StreamBuilder<List<ProductModel>>(
+                      stream: InventoryService.instance.streamProducts(),
+                      builder: (context, archSnap) {
+                        final archCount = (archSnap.data ?? InventoryService.instance.currentProducts)
+                            .where((p) => p.isArchived)
+                            .length;
+                        return Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.archive_outlined),
+                              tooltip: 'Produtos Arquivados',
+                              onPressed: _openArchivedScreen,
+                            ),
+                            if (archCount > 0)
+                              Positioned(
+                                right: 6,
+                                top: 8,
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFB45309),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  constraints: const BoxConstraints(
+                                    minWidth: 16,
+                                    minHeight: 16,
+                                  ),
+                                  child: Text(
+                                    '$archCount',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+
                     // Botão Histórico e Relatórios
                     IconButton(
                       icon: const Icon(Icons.history_outlined),
-                      tooltip: 'Histórico & Relatórios de Estoque',
+                      tooltip: 'Histórico & Relatórios de Movimentação',
                       onPressed: () {
                         Navigator.of(context).push(
                           MaterialPageRoute(
@@ -1201,31 +1509,24 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         onPressed: () {
                           showDialog(
                             context: context,
-                            builder: (_) => const CategoriesManageDialog(),
+                            builder: (_) => CategoriesManageDialog(
+                              initialSectorId: _selectedMasterCategory,
+                            ),
                           );
                         },
                       ),
 
                     // Sincronizar Estoque
                     IconButton(
-                      icon: const Icon(Icons.refresh),
-                      tooltip: 'Sincronizar Estoque',
-                      onPressed: () async {
-                        final messenger = ScaffoldMessenger.of(context);
-                        try {
-                          await InventoryService.instance.fetchProducts();
-                          messenger.showSnackBar(
-                            const SnackBar(
-                              content: Text('Estoque sincronizado com sucesso.'),
-                              duration: Duration(seconds: 1),
-                            ),
-                          );
-                        } catch (e) {
-                          messenger.showSnackBar(
-                            SnackBar(content: Text('Erro ao atualizar: $e')),
-                          );
-                        }
-                      },
+                      icon: _isSyncing
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.refresh),
+                      tooltip: 'Sincronizar com Supabase',
+                      onPressed: _isSyncing ? null : _handleManualSync,
                     ),
 
                     // Logout
@@ -1240,11 +1541,34 @@ class _InventoryScreenState extends State<InventoryScreen> {
           body: StreamBuilder<List<ProductModel>>(
             stream: InventoryService.instance.streamProducts(),
             builder: (context, prodSnapshot) {
-              final rawProducts = prodSnapshot.data ?? [];
+              final allStreamProducts = prodSnapshot.data ?? [];
+              // Estoque principal mostra apenas produtos ativos (não arquivados)
+              final rawProducts = allStreamProducts.where((p) => !p.isArchived).toList();
+
+              // Filtra categorias exibidas no menu para apenas aquelas cadastradas no setor selecionado
+              final sectorCategories = InventoryService.instance.getCategoriesForSector(
+                _selectedMasterCategory,
+                allCategories: categories,
+                products: allStreamProducts,
+                onlyArchived: false,
+              );
+
+              if (_selectedCategoryId != null &&
+                  !sectorCategories.any((c) => c.id == _selectedCategoryId)) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) {
+                    setState(() {
+                      _selectedCategoryId = null;
+                      _selectedSubcategory = null;
+                    });
+                  }
+                });
+              }
+
               final filteredProducts =
                   _filterAndSortProducts(rawProducts, categoryMap);
               final availableSubcategories =
-                  _getAvailableSubcategories(categories, rawProducts);
+                  _getAvailableSubcategories(sectorCategories, rawProducts);
 
               return Column(
                 children: [
@@ -1608,14 +1932,16 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   ),
                 ),
 
-              // 2. Filtro Horizontal de Categorias (Apenas versão Desktop)
+              // 2. Filtro Horizontal de Categorias do Setor Selecionado (Apenas versão Desktop)
               if (!isMobile)
                 Container(
                   color: Colors.white,
                   padding: const EdgeInsets.only(bottom: 12),
                   child: CategoryFilterBar(
-                    categories: categories,
-                    selectedCategoryId: _selectedCategoryId,
+                    categories: sectorCategories,
+                    selectedCategoryId: sectorCategories.any((c) => c.id == _selectedCategoryId)
+                        ? _selectedCategoryId
+                        : null,
                     selectedSubcategory: _selectedSubcategory,
                     availableSubcategories: availableSubcategories,
                     onSelectCategory: (id) {
@@ -1636,7 +1962,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     onManageCategories: () {
                       showDialog(
                         context: context,
-                        builder: (_) => const CategoriesManageDialog(),
+                        builder: (_) => CategoriesManageDialog(
+                          initialSectorId: _selectedMasterCategory,
+                        ),
                       );
                     },
                   ),
@@ -1649,7 +1977,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 child: prodSnapshot.connectionState == ConnectionState.waiting
                     ? const Center(child: CircularProgressIndicator())
                     : RefreshIndicator(
-                        onRefresh: () => InventoryService.instance.fetchProducts(),
+                        onRefresh: _handleManualSync,
                         child: filteredProducts.isEmpty
                         ? Center(
                             child: SingleChildScrollView(
@@ -1668,7 +1996,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                   Text(
                                     _searchQuery.isNotEmpty
                                         ? 'Nenhum item encontrado para "$_searchQuery"'
-                                        : 'Nenhum produto cadastrado',
+                                        : 'Nenhum produto ativo neste setor',
                                     textAlign: TextAlign.center,
                                     style: GoogleFonts.inter(
                                       fontSize: 16,
@@ -1691,8 +2019,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
                           )
                         : LayoutBuilder(
                             builder: (context, constraints) {
-                              // Em telas largas (desktop tela cheia / telas >= 900px), organiza em grade
-                              // com largura máxima controlada por card para evitar que ocupe a largura inteira
                               final isWide = constraints.maxWidth >= 900;
                               if (isWide) {
                                 return GridView.builder(
@@ -1716,6 +2042,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                       onOpenCart: _openCartModal,
                                       onMoveMasterCategory: () =>
                                           _openMoveMasterCategoryDialog(product),
+                                      onArchiveToggle: () =>
+                                          _handleArchiveProduct(product),
                                     );
                                   },
                                 );
@@ -1738,6 +2066,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                       onOpenCart: _openCartModal,
                                       onMoveMasterCategory: () =>
                                           _openMoveMasterCategoryDialog(product),
+                                      onArchiveToggle: () =>
+                                          _handleArchiveProduct(product),
                                     ),
                                   );
                                 },

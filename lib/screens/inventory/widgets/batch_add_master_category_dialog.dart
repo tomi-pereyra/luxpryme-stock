@@ -475,7 +475,7 @@ class _BatchAddMasterCategoryDialogState
                     return const Center(child: CircularProgressIndicator());
                   }
 
-                  final allProducts = snapshot.data ?? [];
+                  final allProducts = (snapshot.data ?? []).where((p) => !p.isArchived).toList();
                   // Regra solicitada:
                   // No + itens, produtos já presentes na categoria mestre NÃO aparecem.
                   // No - itens, produtos que NÃO estão na categoria mestre NÃO aparecem.

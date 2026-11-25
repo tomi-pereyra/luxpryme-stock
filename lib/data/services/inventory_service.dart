@@ -17,6 +17,12 @@ import 'local_cache_service.dart';
 class InventoryService {
   InventoryService._() {
     _initLocalData();
+    OperatorPinModel.customSectorNameResolver = (sectorId) {
+      final found = _masterCategories.where(
+        (m) => m.id.toLowerCase() == sectorId.toLowerCase(),
+      );
+      return found.isNotEmpty ? found.first.name : null;
+    };
     // Inicia carregamento do cache em disco em segundo plano
     initLocalCache();
   }
@@ -357,84 +363,463 @@ class InventoryService {
   }
 
   // ---------------------------------------------------------------------------
-  // CATEGORIAS
+  // CATEGORIAS (LOCAL-FIRST + SINCRONIZAÇÃO EM SEGUNDO PLANO)
   // ---------------------------------------------------------------------------
 
-  Stream<List<CategoryModel>> streamCategories() {
-    if (_isLocalMode || _client == null) {
-      Timer.run(() => _categoriesStreamController.add(_localCategories));
-      return _categoriesStreamController.stream;
+  RealtimeChannel? _categoriesRealtimeChannel;
+
+  List<CategoryModel> get currentCategories => List.unmodifiable(_localCategories);
+
+  /// Retorna apenas as categorias cadastradas/vinculadas ao setor informado.
+  /// Se [sectorId] for 'todas', retorna todas as categorias ordenadas por nome.
+  List<CategoryModel> getCategoriesForSector(
+    String sectorId, {
+    List<CategoryModel>? allCategories,
+    List<ProductModel>? products,
+    bool? onlyArchived,
+  }) {
+    final cats = List<CategoryModel>.from(allCategories ?? _localCategories);
+    cats.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    final cleanSector = sectorId.trim().toLowerCase();
+    if (cleanSector.isEmpty || cleanSector == 'todas') {
+      return cats;
     }
 
-    return _client!
-        .from(AppConstants.tableCategories)
-        .stream(primaryKey: ['id'])
-        .order('name', ascending: true)
-        .map((records) => records.map((e) => CategoryModel.fromMap(e)).toList());
+    final sourceProducts = products ?? currentProducts;
+    final usedCatIds = <String>{};
+    for (final p in sourceProducts) {
+      if (onlyArchived != null && p.isArchived != onlyArchived) continue;
+      if (p.masterCategories.any((m) => m.toLowerCase() == cleanSector)) {
+        usedCatIds.addAll(p.categoryIds);
+      }
+    }
+
+    return cats.where((cat) {
+      if (usedCatIds.contains(cat.id)) return true;
+      if (onlyArchived != true &&
+          cat.masterCategories.any((m) => m.toLowerCase() == cleanSector)) {
+        return true;
+      }
+      return false;
+    }).toList();
+  }
+
+  Stream<List<CategoryModel>> streamCategories() {
+    scheduleMicrotask(() {
+      if (!_categoriesStreamController.isClosed) {
+        _categoriesStreamController.add(List.unmodifiable(_localCategories));
+      }
+    });
+
+    if (!_isLocalMode && _client != null) {
+      fetchCategories();
+      _subscribeCategoriesRealtime();
+    }
+
+    return _categoriesStreamController.stream;
+  }
+
+  void _subscribeCategoriesRealtime() {
+    if (_categoriesRealtimeChannel != null || _client == null) return;
+
+    _categoriesRealtimeChannel = _client!
+        .channel('public:categories_live')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: AppConstants.tableCategories,
+          callback: (payload) {
+            fetchCategories();
+          },
+        )
+        .subscribe();
+  }
+
+  Future<List<CategoryModel>> fetchCategories({bool throwOnError = false}) async {
+    if (_isLocalMode || _client == null) {
+      return List.unmodifiable(_localCategories);
+    }
+
+    try {
+      final res = await _client!
+          .from(AppConstants.tableCategories)
+          .select()
+          .order('name', ascending: true);
+
+      final remoteList = (res as List)
+          .map((e) => CategoryModel.fromMap(e as Map<String, dynamic>))
+          .toList();
+
+      // Preserva metadados locais (ex: subcategorias ou setores locais caso o banco não tenha retornado)
+      final existingById = {for (final c in _localCategories) c.id: c};
+      final merged = remoteList.map((rc) {
+        final prev = existingById[rc.id];
+        if (prev == null) return rc;
+        return rc.copyWith(
+          subcategories: rc.subcategories.isNotEmpty ? rc.subcategories : prev.subcategories,
+          masterCategories: rc.masterCategories.isNotEmpty ? rc.masterCategories : prev.masterCategories,
+        );
+      }).toList();
+
+      // Preserva categorias criadas offline ainda não sincronizadas
+      for (final localC in _localCategories) {
+        if (localC.id.startsWith('cat-') &&
+            !merged.any((m) => m.name.trim().toLowerCase() == localC.name.trim().toLowerCase())) {
+          merged.add(localC);
+        }
+      }
+
+      merged.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      _localCategories = merged;
+      await LocalCacheService.instance.saveCategories(_localCategories);
+      if (!_categoriesStreamController.isClosed) {
+        _categoriesStreamController.add(List.unmodifiable(_localCategories));
+      }
+      return List.unmodifiable(_localCategories);
+    } catch (e) {
+      debugPrint('Aviso ao carregar categorias do Supabase: $e');
+      if (throwOnError) rethrow;
+      return List.unmodifiable(_localCategories);
+    }
   }
 
   Future<CategoryModel> createCategory({
     required String name,
     String? description,
+    List<String> masterCategories = const [],
   }) async {
+    final cleanName = name.trim();
+    if (cleanName.isEmpty) {
+      throw Exception('Informe o nome da categoria.');
+    }
+    if (_localCategories.any((c) => c.name.trim().toLowerCase() == cleanName.toLowerCase())) {
+      throw Exception('Já existe uma categoria cadastrada com o nome "$cleanName".');
+    }
+
+    final cleanSectors = masterCategories
+        .map((s) => s.trim().toLowerCase())
+        .where((s) => s.isNotEmpty && s != 'todas')
+        .toSet()
+        .toList();
+
+    final newCat = CategoryModel(
+      id: 'cat-${DateTime.now().millisecondsSinceEpoch}',
+      name: cleanName,
+      description: description?.trim().isEmpty == true ? null : description?.trim(),
+      masterCategories: cleanSectors,
+      createdAt: DateTime.now(),
+    );
+
+    _localCategories.add(newCat);
+    _localCategories.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    await LocalCacheService.instance.saveCategories(_localCategories);
+    if (!_categoriesStreamController.isClosed) {
+      _categoriesStreamController.add(List.unmodifiable(_localCategories));
+    }
+
     if (_isLocalMode || _client == null) {
-      final newCat = CategoryModel(
-        id: 'cat-${DateTime.now().millisecondsSinceEpoch}',
-        name: name.trim(),
-        description: description?.trim(),
-        createdAt: DateTime.now(),
-      );
-      _localCategories.add(newCat);
       _notifyLocal();
       return newCat;
     }
 
-    final res = await _client!
-        .from(AppConstants.tableCategories)
-        .insert({
-          'name': name.trim(),
-          if (description != null && description.trim().isNotEmpty)
-            'description': description.trim(),
-        })
-        .select()
-        .single();
-
-    return CategoryModel.fromMap(res);
+    unawaited(_backgroundSyncCreateCategory(newCat));
+    return newCat;
   }
 
-  Future<void> deleteCategory(String categoryId) async {
-    if (_isLocalMode || _client == null) {
-      final hasProducts =
-          _localProducts.any((p) => p.categoryIds.contains(categoryId));
-      if (hasProducts) {
-        throw Exception(
-          'Não é possível excluir esta categoria pois existem produtos associados a ela.',
+  Future<void> _backgroundSyncCreateCategory(CategoryModel newCat) async {
+    if (_client == null || _isLocalMode) return;
+    try {
+      final supaDesc = newCat.toSupabaseDescription();
+      final res = await _client!
+          .from(AppConstants.tableCategories)
+          .insert({
+            'name': newCat.name,
+            'description': ?supaDesc,
+          })
+          .select()
+          .maybeSingle();
+
+      if (res != null) {
+        final serverCat = CategoryModel.fromMap(res).copyWith(
+          masterCategories: newCat.masterCategories,
         );
+        final idx = _localCategories.indexWhere((c) => c.id == newCat.id || c.name.toLowerCase() == serverCat.name.toLowerCase());
+        if (idx != -1) {
+          _localCategories[idx] = serverCat;
+        } else {
+          _localCategories.add(serverCat);
+        }
+        _localCategories.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        await LocalCacheService.instance.saveCategories(_localCategories);
+        if (!_categoriesStreamController.isClosed) {
+          _categoriesStreamController.add(List.unmodifiable(_localCategories));
+        }
+
+        // Reconcilia produtos locais que já usaram o ID temporário da categoria
+        if (serverCat.id != newCat.id) {
+          bool changedProds = false;
+          for (int i = 0; i < _allProducts.length; i++) {
+            if (_allProducts[i].categoryIds.contains(newCat.id)) {
+              final updatedIds = _allProducts[i]
+                  .categoryIds
+                  .map((cid) => cid == newCat.id ? serverCat.id : cid)
+                  .toList();
+              _allProducts[i] = _allProducts[i].copyWith(categoryIds: updatedIds);
+              changedProds = true;
+            }
+          }
+          for (int i = 0; i < _localProducts.length; i++) {
+            if (_localProducts[i].categoryIds.contains(newCat.id)) {
+              final updatedIds = _localProducts[i]
+                  .categoryIds
+                  .map((cid) => cid == newCat.id ? serverCat.id : cid)
+                  .toList();
+              _localProducts[i] = _localProducts[i].copyWith(categoryIds: updatedIds);
+              changedProds = true;
+            }
+          }
+          if (changedProds) {
+            await LocalCacheService.instance.saveProducts(_allProducts.isNotEmpty ? _allProducts : _localProducts);
+            if (!_productsStreamController.isClosed) {
+              _productsStreamController.add(List.unmodifiable(_allProducts.isNotEmpty ? _allProducts : _localProducts));
+            }
+          }
+        }
       }
-      _localCategories.removeWhere((c) => c.id == categoryId);
+    } catch (e) {
+      debugPrint('Aviso ao sincronizar criação de categoria em segundo plano: $e');
+      await LocalCacheService.instance.queueSyncAction({
+        'action_type': 'create_category',
+        'category': newCat.toMap(),
+      });
+    }
+  }
+
+  Future<CategoryModel> updateCategory({
+    required String id,
+    required String name,
+    String? description,
+    List<String>? masterCategories,
+  }) async {
+    final cleanName = name.trim();
+    if (cleanName.isEmpty) {
+      throw Exception('O nome da categoria não pode ser vazio.');
+    }
+
+    final idx = _localCategories.indexWhere((c) => c.id == id);
+    if (idx == -1) {
+      throw Exception('Categoria não encontrada.');
+    }
+
+    final duplicate = _localCategories.any(
+      (c) => c.id != id && c.name.trim().toLowerCase() == cleanName.toLowerCase(),
+    );
+    if (duplicate) {
+      throw Exception('Já existe outra categoria com o nome "$cleanName".');
+    }
+
+    final existing = _localCategories[idx];
+    final cleanDesc = description?.trim();
+    final updated = existing.copyWith(
+      name: cleanName,
+      description: cleanDesc,
+      clearDescription: cleanDesc == null || cleanDesc.isEmpty,
+      masterCategories: masterCategories != null
+          ? masterCategories
+              .map((s) => s.trim().toLowerCase())
+              .where((s) => s.isNotEmpty && s != 'todas')
+              .toSet()
+              .toList()
+          : existing.masterCategories,
+    );
+
+    _localCategories[idx] = updated;
+    _localCategories.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    await LocalCacheService.instance.saveCategories(_localCategories);
+    if (!_categoriesStreamController.isClosed) {
+      _categoriesStreamController.add(List.unmodifiable(_localCategories));
+    }
+
+    // Atualiza nomes resolvidos nos produtos em memória imediatamente (0ms)
+    final catMap = {for (final c in _localCategories) c.id: c.name};
+    bool prodsUpdated = false;
+    for (int i = 0; i < _allProducts.length; i++) {
+      if (_allProducts[i].categoryIds.contains(id)) {
+        final names = _allProducts[i]
+            .categoryIds
+            .map((cid) => catMap[cid])
+            .whereType<String>()
+            .toList();
+        _allProducts[i] = _allProducts[i].copyWith(categoryNames: names);
+        prodsUpdated = true;
+      }
+    }
+    for (int i = 0; i < _localProducts.length; i++) {
+      if (_localProducts[i].categoryIds.contains(id)) {
+        final names = _localProducts[i]
+            .categoryIds
+            .map((cid) => catMap[cid])
+            .whereType<String>()
+            .toList();
+        _localProducts[i] = _localProducts[i].copyWith(categoryNames: names);
+        prodsUpdated = true;
+      }
+    }
+    if (prodsUpdated) {
+      await LocalCacheService.instance.saveProducts(_allProducts.isNotEmpty ? _allProducts : _localProducts);
+      if (!_productsStreamController.isClosed) {
+        _productsStreamController.add(List.unmodifiable(_allProducts.isNotEmpty ? _allProducts : _localProducts));
+      }
+    }
+
+    if (_isLocalMode || _client == null) {
       _notifyLocal();
-      return;
+      return updated;
     }
 
-    final countRes = await _client!
-        .from(AppConstants.tableProducts)
-        .select('id')
-        .contains('category_ids', [categoryId]);
+    unawaited(_backgroundSyncUpdateCategory(updated));
+    return updated;
+  }
 
-    if (countRes.isNotEmpty) {
-      throw Exception(
-        'Não é possível excluir esta categoria pois existem ${countRes.length} produto(s) associados a ela.',
-      );
+  Future<void> _backgroundSyncUpdateCategory(CategoryModel updated) async {
+    if (_client == null || _isLocalMode) return;
+    try {
+      await _client!
+          .from(AppConstants.tableCategories)
+          .update({
+            'name': updated.name,
+            'description': updated.toSupabaseDescription(),
+          })
+          .eq('id', updated.id);
+    } catch (e) {
+      debugPrint('Aviso ao sincronizar atualização de categoria em segundo plano: $e');
+      await LocalCacheService.instance.queueSyncAction({
+        'action_type': 'update_category',
+        'category': updated.toMap(),
+      });
+    }
+  }
+
+  /// Elimina uma categoria mesmo que existam produtos vinculados a ela,
+  /// desvinculando automaticamente esses produtos localmente (0ms) e em segundo plano no Supabase.
+  Future<int> deleteCategory(String categoryId) async {
+    _localCategories.removeWhere((c) => c.id == categoryId);
+    await LocalCacheService.instance.saveCategories(_localCategories);
+    if (!_categoriesStreamController.isClosed) {
+      _categoriesStreamController.add(List.unmodifiable(_localCategories));
     }
 
-    await _client!
-        .from(AppConstants.tableCategories)
-        .delete()
-        .eq('id', categoryId);
+    final catMap = {for (final c in _localCategories) c.id: c.name};
+    final List<ProductModel> affectedProducts = [];
+    final seenIds = <String>{};
+
+    for (int i = 0; i < _allProducts.length; i++) {
+      final p = _allProducts[i];
+      if (p.categoryIds.contains(categoryId)) {
+        final newIds = p.categoryIds.where((cid) => cid != categoryId).toList();
+        final newNames = newIds.map((cid) => catMap[cid]).whereType<String>().toList();
+        final updatedP = p.copyWith(
+          categoryIds: newIds,
+          categoryNames: newNames,
+          updatedAt: DateTime.now(),
+        );
+        _allProducts[i] = updatedP;
+        if (seenIds.add(updatedP.id)) {
+          affectedProducts.add(updatedP);
+        }
+      }
+    }
+
+    for (int i = 0; i < _localProducts.length; i++) {
+      final p = _localProducts[i];
+      if (p.categoryIds.contains(categoryId)) {
+        final newIds = p.categoryIds.where((cid) => cid != categoryId).toList();
+        final newNames = newIds.map((cid) => catMap[cid]).whereType<String>().toList();
+        final updatedP = p.copyWith(
+          categoryIds: newIds,
+          categoryNames: newNames,
+          updatedAt: DateTime.now(),
+        );
+        _localProducts[i] = updatedP;
+        if (seenIds.add(updatedP.id)) {
+          affectedProducts.add(updatedP);
+        }
+      }
+    }
+
+    bool trashChanged = false;
+    for (int i = 0; i < _trashProducts.length; i++) {
+      final p = _trashProducts[i];
+      if (p.categoryIds.contains(categoryId)) {
+        final newIds = p.categoryIds.where((cid) => cid != categoryId).toList();
+        final newNames = newIds.map((cid) => catMap[cid]).whereType<String>().toList();
+        _trashProducts[i] = p.copyWith(categoryIds: newIds, categoryNames: newNames);
+        trashChanged = true;
+      }
+    }
+    if (trashChanged) {
+      await LocalCacheService.instance.saveTrash(_trashProducts);
+      if (!_trashStreamController.isClosed) {
+        _trashStreamController.add(List.unmodifiable(_trashProducts));
+      }
+    }
+
+    if (affectedProducts.isNotEmpty) {
+      await LocalCacheService.instance.saveProducts(_allProducts.isNotEmpty ? _allProducts : _localProducts);
+      if (!_productsStreamController.isClosed) {
+        _productsStreamController.add(List.unmodifiable(_allProducts.isNotEmpty ? _allProducts : _localProducts));
+      }
+    }
+
+    if (_isLocalMode || _client == null) {
+      _notifyLocal();
+      return affectedProducts.length;
+    }
+
+    unawaited(_backgroundSyncDeleteCategory(categoryId, affectedProducts));
+    return affectedProducts.length;
+  }
+
+  Future<void> _backgroundSyncDeleteCategory(
+    String categoryId,
+    List<ProductModel> affectedProducts,
+  ) async {
+    if (_client == null || _isLocalMode) return;
+    try {
+      for (final prod in affectedProducts) {
+        if (!ProductModel.uuidRegex.hasMatch(prod.id)) continue;
+        final validCatIds = prod.categoryIds.where((c) => ProductModel.uuidRegex.hasMatch(c)).toList();
+        await _client!
+            .from(AppConstants.tableProducts)
+            .update({
+              'category_ids': validCatIds,
+              'category_id': validCatIds.isNotEmpty ? validCatIds.first : null,
+            })
+            .eq('id', prod.id);
+      }
+
+      if (ProductModel.uuidRegex.hasMatch(categoryId)) {
+        await _client!
+            .from(AppConstants.tableCategories)
+            .delete()
+            .eq('id', categoryId);
+      }
+    } catch (e) {
+      debugPrint('Aviso ao sincronizar exclusão de categoria em segundo plano: $e');
+      await LocalCacheService.instance.queueSyncAction({
+        'action_type': 'delete_category',
+        'category_id': categoryId,
+        'affected_products': affectedProducts.map((p) => {
+          'id': p.id,
+          'category_ids': p.categoryIds,
+        }).toList(),
+      });
+    }
   }
 
   // ---------------------------------------------------------------------------
-  // CATEGORIAS MESTRES INDUSTRIAIS (ELETRÔNICA, PRODUÇÃO, PREPARAÇÃO, ETC.)
+  // CATEGORIAS MESTRES INDUSTRIAIS (SETORES: ELETRÔNICA, PRODUÇÃO, ETC.)
   // ---------------------------------------------------------------------------
 
   RealtimeChannel? _masterCategoriesRealtimeChannel;
@@ -459,7 +844,7 @@ class InventoryService {
     return _masterCategoriesStreamController.stream;
   }
 
-  Future<List<MasterCategoryModel>> fetchMasterCategories() async {
+  Future<List<MasterCategoryModel>> fetchMasterCategories({bool throwOnError = false}) async {
     if (_isLocalMode || _client == null) {
       return List.unmodifiable(_masterCategories);
     }
@@ -493,6 +878,7 @@ class InventoryService {
       return _masterCategories;
     } catch (e) {
       debugPrint('Aviso ao carregar master_categories do Supabase: $e');
+      if (throwOnError) rethrow;
       return _masterCategories;
     }
   }
@@ -581,24 +967,28 @@ class InventoryService {
 
     // Sincronização em segundo plano com o Supabase
     if (!_isLocalMode && _client != null) {
-      unawaited(_backgroundSyncCreateMasterCategory(newMaster));
+      unawaited(_backgroundSyncUpsertMasterCategory(newMaster));
     }
 
     return newMaster;
   }
 
-  Future<void> _backgroundSyncCreateMasterCategory(MasterCategoryModel newMaster) async {
+  Future<void> _backgroundSyncUpsertMasterCategory(MasterCategoryModel masterCat) async {
     if (_client == null || _isLocalMode) return;
     try {
-      await _client!.from(AppConstants.tableMasterCategories).insert({
-        'id': newMaster.id,
-        'name': newMaster.name,
-        if (newMaster.description != null) 'description': newMaster.description,
-        if (newMaster.colorHex != null) 'color': newMaster.colorHex,
-        if (newMaster.iconName != null) 'icon': newMaster.iconName,
+      await _client!.from(AppConstants.tableMasterCategories).upsert({
+        'id': masterCat.id,
+        'name': masterCat.name,
+        'description': masterCat.description,
+        'color': masterCat.colorHex,
+        'icon': masterCat.iconName,
       });
     } catch (e) {
-      debugPrint('Aviso ao inserir master_category no Supabase em segundo plano: $e');
+      debugPrint('Aviso ao sincronizar master_category no Supabase em segundo plano: $e');
+      await LocalCacheService.instance.queueSyncAction({
+        'action_type': 'upsert_master_category',
+        'master_category': masterCat.toMap(),
+      });
     }
   }
 
@@ -645,27 +1035,16 @@ class InventoryService {
     if (!_masterCategoriesStreamController.isClosed) {
       _masterCategoriesStreamController.add(List.unmodifiable(_masterCategories));
     }
+    if (!_pinsStreamController.isClosed) {
+      _pinsStreamController.add(List.unmodifiable(_localPins));
+    }
 
     // Sincronização em segundo plano com o Supabase
     if (!_isLocalMode && _client != null) {
-      unawaited(_backgroundSyncUpdateMasterCategory(updated));
+      unawaited(_backgroundSyncUpsertMasterCategory(updated));
     }
 
     return updated;
-  }
-
-  Future<void> _backgroundSyncUpdateMasterCategory(MasterCategoryModel updated) async {
-    if (_client == null || _isLocalMode) return;
-    try {
-      await _client!.from(AppConstants.tableMasterCategories).update({
-        'name': updated.name,
-        'description': updated.description,
-        'color': updated.colorHex,
-        'icon': updated.iconName,
-      }).eq('id', updated.id);
-    } catch (e) {
-      debugPrint('Aviso ao atualizar master_category no Supabase em segundo plano: $e');
-    }
   }
 
   Future<void> deleteMasterCategory({
@@ -694,18 +1073,24 @@ class InventoryService {
       if (p.masterCategories.contains(lowerId)) {
         final newCats = List<String>.from(p.masterCategories)..remove(lowerId);
         if (newCats.isEmpty) newCats.add('outros');
-        _allProducts[i] = p.copyWith(masterCategories: newCats);
+        final updatedP = p.copyWith(masterCategories: newCats);
+        _allProducts[i] = updatedP;
         if (!_isLocalMode && _client != null) {
-          _client!
-              .from(AppConstants.tableProducts)
-              .update({'master_categories': newCats})
-              .eq('id', p.id)
-              .then((_) {}, onError: (e) => debugPrint('Erro ao desvincular categoria de produto: $e'));
+          unawaited(_backgroundSyncUpdateProduct(updatedP));
         }
       }
     }
+    for (int i = 0; i < _localProducts.length; i++) {
+      final p = _localProducts[i];
+      if (p.masterCategories.contains(lowerId)) {
+        final newCats = List<String>.from(p.masterCategories)..remove(lowerId);
+        if (newCats.isEmpty) newCats.add('outros');
+        _localProducts[i] = p.copyWith(masterCategories: newCats);
+      }
+    }
+    await LocalCacheService.instance.saveProducts(_allProducts.isNotEmpty ? _allProducts : _localProducts);
     if (!_productsStreamController.isClosed) {
-      _productsStreamController.add(List.unmodifiable(_allProducts));
+      _productsStreamController.add(List.unmodifiable(_allProducts.isNotEmpty ? _allProducts : _localProducts));
     }
 
     // Se houver algum PIN vinculado exclusivamente a essa categoria, migra para 'outros'
@@ -714,6 +1099,7 @@ class InventoryService {
         _localPins[i] = _localPins[i].copyWith(masterCategory: 'outros');
       }
     }
+    await LocalCacheService.instance.savePins(_localPins);
 
     _masterCategories.removeWhere((mc) => mc.id.toLowerCase() == lowerId);
     _saveMasterCategoriesLocal();
@@ -739,10 +1125,16 @@ class InventoryService {
       await _client!.from(AppConstants.tableMasterCategories).delete().eq('id', id);
     } catch (e) {
       debugPrint('Aviso ao remover master_category do Supabase em segundo plano: $e');
+      await LocalCacheService.instance.queueSyncAction({
+        'action_type': 'delete_master_category',
+        'id': id,
+        'lower_id': lowerId,
+      });
     }
   }
 
   void _saveMasterCategoriesLocal() {
+    unawaited(LocalCacheService.instance.saveMasterCategories(_masterCategories));
     try {
       final file = File('local_master_categories.json');
       final list = _masterCategories.map((mc) => mc.toMap()).toList();
@@ -757,7 +1149,14 @@ class InventoryService {
   bool _isLoadingProducts = false;
   List<ProductModel> _allProducts = [];
   List<ProductModel> get currentProducts =>
-      List.unmodifiable(_isLocalMode || _client == null ? _localProducts : _allProducts);
+      List.unmodifiable(_isLocalMode || _client == null ? _localProducts : (_allProducts.isNotEmpty ? _allProducts : _localProducts));
+
+  List<ProductModel> get activeProducts =>
+      currentProducts.where((p) => !p.isArchived).toList();
+
+  List<ProductModel> get archivedProducts =>
+      currentProducts.where((p) => p.isArchived).toList();
+
   RealtimeChannel? _productsRealtimeChannel;
 
   Stream<List<ProductModel>> streamProducts() {
@@ -782,7 +1181,7 @@ class InventoryService {
 
   bool _isFlushingQueue = false;
 
-  Future<void> _flushPendingSyncQueue() async {
+  Future<void> _flushPendingSyncQueue({bool rethrowOnError = false}) async {
     if (_isFlushingQueue || _isLocalMode || _client == null) return;
     _isFlushingQueue = true;
     try {
@@ -790,6 +1189,9 @@ class InventoryService {
       if (queue.isEmpty) return;
 
       debugPrint('Sincronizando ${queue.length} ações pendentes da fila offline...');
+      final List<Map<String, dynamic>> failedActions = [];
+      Object? lastError;
+
       for (final action in queue) {
         final type = action['action_type']?.toString();
         try {
@@ -838,25 +1240,18 @@ class InventoryService {
             case 'update_product':
               final productMap = Map<String, dynamic>.from(action['product']);
               final prod = ProductModel.fromMap(productMap);
-              final uPayload = prod.toMap();
-              uPayload.remove('id');
-              final validCatIds = prod.categoryIds.where((c) => ProductModel.uuidRegex.hasMatch(c)).toList();
-              if (validCatIds.isNotEmpty) {
-                uPayload['category_ids'] = validCatIds;
-                uPayload['category_id'] = validCatIds.first;
-              } else {
-                uPayload.remove('category_ids');
-                uPayload.remove('category_id');
+              if (ProductModel.uuidRegex.hasMatch(prod.id)) {
+                final uPayload = prod.toMap(forSupabase: true);
+                await _client!
+                    .from(AppConstants.tableProducts)
+                    .update(uPayload)
+                    .eq('id', prod.id);
               }
-              await _client!
-                  .from(AppConstants.tableProducts)
-                  .update(uPayload)
-                  .eq('id', prod.id);
               break;
 
             case 'delete_product':
               final pId = action['product_id']?.toString();
-              if (pId != null) {
+              if (pId != null && ProductModel.uuidRegex.hasMatch(pId)) {
                 await _client!.from(AppConstants.tableProducts).delete().eq('id', pId);
               }
               break;
@@ -864,7 +1259,11 @@ class InventoryService {
             case 'restore_product':
               final productMap = Map<String, dynamic>.from(action['product']);
               final prod = ProductModel.fromMap(productMap);
-              await _client!.from(AppConstants.tableProducts).upsert(prod.toMap(forDatabaseInsert: false));
+              final rPayload = prod.toMap(forSupabase: true);
+              if (ProductModel.uuidRegex.hasMatch(prod.id)) {
+                rPayload['id'] = prod.id;
+              }
+              await _client!.from(AppConstants.tableProducts).upsert(rPayload);
               break;
 
             case 'bulk_add_master_cat':
@@ -872,7 +1271,7 @@ class InventoryService {
             case 'move_master_cat':
               final pId = action['product_id']?.toString();
               final mCats = (action['master_categories'] as List?)?.map((e) => e.toString()).toList();
-              if (pId != null && mCats != null) {
+              if (pId != null && mCats != null && ProductModel.uuidRegex.hasMatch(pId)) {
                 await _client!
                     .from(AppConstants.tableProducts)
                     .update({'master_categories': mCats})
@@ -883,7 +1282,7 @@ class InventoryService {
             case 'resolve_conflict':
               final pId = action['product_id']?.toString();
               final qty = action['quantity'] as int?;
-              if (pId != null && qty != null) {
+              if (pId != null && qty != null && ProductModel.uuidRegex.hasMatch(pId)) {
                 await _client!
                     .from(AppConstants.tableProducts)
                     .update({'quantity': qty})
@@ -894,18 +1293,160 @@ class InventoryService {
                 await _recordMovement(mov);
               }
               break;
+
+            case 'create_category':
+              final catMap = Map<String, dynamic>.from(action['category']);
+              final cat = CategoryModel.fromMap(catMap);
+              final supaDesc = cat.toSupabaseDescription();
+              await _client!.from(AppConstants.tableCategories).insert({
+                'name': cat.name,
+                'description': ?supaDesc,
+              });
+              break;
+
+            case 'update_category':
+              final catMap = Map<String, dynamic>.from(action['category']);
+              final cat = CategoryModel.fromMap(catMap);
+              if (ProductModel.uuidRegex.hasMatch(cat.id)) {
+                await _client!.from(AppConstants.tableCategories).update({
+                  'name': cat.name,
+                  'description': cat.toSupabaseDescription(),
+                }).eq('id', cat.id);
+              }
+              break;
+
+            case 'delete_category':
+              final catId = action['category_id']?.toString();
+              final List affected = action['affected_products'] as List? ?? [];
+              for (final item in affected) {
+                final m = Map<String, dynamic>.from(item);
+                final pId = m['id']?.toString();
+                if (pId != null && ProductModel.uuidRegex.hasMatch(pId)) {
+                  final cIds = (m['category_ids'] as List? ?? [])
+                      .map((e) => e.toString())
+                      .where((c) => ProductModel.uuidRegex.hasMatch(c))
+                      .toList();
+                  await _client!.from(AppConstants.tableProducts).update({
+                    'category_ids': cIds,
+                    'category_id': cIds.isNotEmpty ? cIds.first : null,
+                  }).eq('id', pId);
+                }
+              }
+              if (catId != null && ProductModel.uuidRegex.hasMatch(catId)) {
+                await _client!.from(AppConstants.tableCategories).delete().eq('id', catId);
+              }
+              break;
+
+            case 'upsert_master_category':
+              final mcMap = Map<String, dynamic>.from(action['master_category']);
+              final mc = MasterCategoryModel.fromMap(mcMap);
+              await _client!.from(AppConstants.tableMasterCategories).upsert({
+                'id': mc.id,
+                'name': mc.name,
+                'description': mc.description,
+                'color': mc.colorHex,
+                'icon': mc.iconName,
+              });
+              break;
+
+            case 'delete_master_category':
+              final mcId = action['id']?.toString();
+              final lowerId = action['lower_id']?.toString();
+              if (lowerId != null) {
+                try {
+                  await _client!
+                      .from('operator_pins')
+                      .update({'master_category': 'outros'})
+                      .eq('master_category', lowerId);
+                } catch (_) {}
+              }
+              if (mcId != null) {
+                await _client!.from(AppConstants.tableMasterCategories).delete().eq('id', mcId);
+              }
+              break;
+
+            case 'create_operator_pin':
+              final pinMap = Map<String, dynamic>.from(action['pin']);
+              await _client!.from('operator_pins').upsert({
+                'name': pinMap['name'],
+                'pin': pinMap['pin'],
+                'master_category': pinMap['master_category'],
+                'is_active': true,
+              }, onConflict: 'pin');
+              break;
+
+            case 'update_operator_pin':
+              final pinMap = Map<String, dynamic>.from(action['pin']);
+              final pId = pinMap['id']?.toString();
+              if (pId != null && ProductModel.uuidRegex.hasMatch(pId)) {
+                await _client!.from('operator_pins').update({
+                  'name': pinMap['name'],
+                  'pin': pinMap['pin'],
+                  'master_category': pinMap['master_category'],
+                }).eq('id', pId);
+              }
+              break;
+
+            case 'delete_operator_pin':
+              final pId = action['id']?.toString();
+              if (pId != null && ProductModel.uuidRegex.hasMatch(pId)) {
+                await _client!.from('operator_pins').delete().eq('id', pId);
+              }
+              break;
           }
         } catch (itemErr) {
           debugPrint('Aviso ao sincronizar item da fila offline ($type): $itemErr');
+          lastError = itemErr;
+          failedActions.add(action);
         }
       }
-      await LocalCacheService.instance.clearPendingSyncActions();
-      debugPrint('Fila offline descarregada com sucesso.');
+
+      if (failedActions.isEmpty) {
+        await LocalCacheService.instance.clearPendingSyncActions();
+        debugPrint('Fila offline descarregada com sucesso.');
+      } else {
+        await LocalCacheService.instance.savePendingSyncActions(failedActions);
+        if (rethrowOnError && lastError != null) {
+          throw Exception('Falha de rede ao enviar ${failedActions.length} alteração(ões) pendente(s): $lastError');
+        }
+      }
     } catch (e) {
       debugPrint('Aviso ao descarregar fila offline: $e');
+      if (rethrowOnError) rethrow;
     } finally {
       _isFlushingQueue = false;
     }
+  }
+
+  /// Sincronização completa e garantida com o Supabase (descarrega fila local e atualiza todas as tabelas).
+  /// Lança exceção caso não haja conexão, evitando avisos falsos de sucesso.
+  Future<void> syncAllWithSupabase() async {
+    if (_isLocalMode || _client == null) {
+      throw Exception('Aplicativo em modo offline/local sem conexão com o Supabase.');
+    }
+
+    // 1. Aguarda caso já haja um carregamento em andamento para não retornar cache antigo
+    int waitCycles = 0;
+    while (_isLoadingProducts && waitCycles < 30) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      waitCycles++;
+    }
+
+    // 2. Descarrega fila local pendente primeiro para não sobrescrever edições locais
+    await _flushPendingSyncQueue(rethrowOnError: true);
+
+    // 3. Baixa categorias, setores e PINs atualizados do servidor
+    await Future.wait([
+      fetchCategories(throwOnError: true),
+      fetchMasterCategories(throwOnError: true),
+      fetchOperatorPins(),
+    ]);
+
+    // 4. Baixa o catálogo completo de produtos (ativos e arquivados) com validação real de erro
+    await _executeProductsFetch(throwOnError: true);
+
+    // 5. Atualiza movimentações em segundo plano
+    unawaited(fetchMovements());
   }
 
   Future<List<ProductModel>> fetchProducts({bool forceRefresh = false}) async {
@@ -926,16 +1467,16 @@ class InventoryService {
       return _allProducts;
     }
 
-    return _executeProductsFetch();
+    return _executeProductsFetch(throwOnError: forceRefresh);
   }
 
-  Future<List<ProductModel>> _executeProductsFetch() async {
+  Future<List<ProductModel>> _executeProductsFetch({bool throwOnError = false}) async {
     if (_isLoadingProducts) return _allProducts;
     _isLoadingProducts = true;
 
     try {
       // 1. Descarrega qualquer alteração offline pendente
-      await _flushPendingSyncQueue();
+      await _flushPendingSyncQueue(rethrowOnError: throwOnError);
 
       // 2. Baixa catálogo completo do Supabase superando o limite de 1000
       final List<ProductModel> loaded = [];
@@ -996,6 +1537,7 @@ class InventoryService {
           }
         }
       }
+      if (throwOnError) rethrow;
       return _allProducts;
     } finally {
       _isLoadingProducts = false;
@@ -1395,17 +1937,9 @@ class InventoryService {
 
   Future<void> _backgroundSyncUpdateProduct(ProductModel updated) async {
     if (_client == null || _isLocalMode) return;
+    if (!ProductModel.uuidRegex.hasMatch(updated.id)) return;
 
-    final payload = updated.toMap();
-    payload.remove('id');
-    final validCatIds = updated.categoryIds.where((c) => ProductModel.uuidRegex.hasMatch(c)).toList();
-    if (validCatIds.isNotEmpty) {
-      payload['category_ids'] = validCatIds;
-      payload['category_id'] = validCatIds.first;
-    } else {
-      payload.remove('category_ids');
-      payload.remove('category_id');
-    }
+    final payload = updated.toMap(forSupabase: true);
 
     try {
       await _client!
@@ -1459,6 +1993,89 @@ class InventoryService {
         });
       }
     }
+  }
+
+  /// Arquiva um produto (mantém seu saldo, setor e categorias, retirando da listagem ativa)
+  Future<ProductModel> archiveProduct(String productId, {String? pin}) async {
+    return _setProductArchivedState(productId, archived: true, pin: pin);
+  }
+
+  /// Desarquiva um produto, retornando-o imediatamente ao estoque ativo de seu setor
+  Future<ProductModel> unarchiveProduct(String productId, {String? pin}) async {
+    return _setProductArchivedState(productId, archived: false, pin: pin);
+  }
+
+  Future<ProductModel> _setProductArchivedState(
+    String productId, {
+    required bool archived,
+    String? pin,
+  }) async {
+    ProductModel? targetProduct;
+    if (_allProducts.any((p) => p.id == productId)) {
+      targetProduct = _allProducts.firstWhere((p) => p.id == productId);
+    } else if (_localProducts.any((p) => p.id == productId)) {
+      targetProduct = _localProducts.firstWhere((p) => p.id == productId);
+    }
+    if (targetProduct == null) {
+      throw Exception('Produto não encontrado no catálogo.');
+    }
+
+    String operatorName = 'Operador (Sem PIN)';
+    if (pin != null && pin.isNotEmpty) {
+      final op = await validatePin(pin);
+      if (op == null) throw Exception('PIN inválido ou não autorizado.');
+      if (!op.canModify(targetProduct)) {
+        throw Exception(
+          'Acesso negado: O PIN "${op.name}" (${op.masterCategoryLabel}) '
+          'não possui autorização para ${archived ? "arquivar" : "desarquivar"} produtos deste setor.',
+        );
+      }
+      operatorName = op.name;
+    }
+
+    final updated = targetProduct.copyWith(
+      isArchived: archived,
+      updatedAt: DateTime.now(),
+    );
+
+    final lIdx = _localProducts.indexWhere((p) => p.id == productId);
+    if (lIdx != -1) _localProducts[lIdx] = updated;
+    final aIdx = _allProducts.indexWhere((p) => p.id == productId);
+    if (aIdx != -1) _allProducts[aIdx] = updated;
+
+    await LocalCacheService.instance.saveProducts(_allProducts.isNotEmpty ? _allProducts : _localProducts);
+    if (!_productsStreamController.isClosed) {
+      _productsStreamController.add(List.unmodifiable(_allProducts.isNotEmpty ? _allProducts : _localProducts));
+    }
+
+    final movement = StockMovementModel(
+      id: 'mov-${DateTime.now().microsecondsSinceEpoch}',
+      productId: updated.id,
+      productName: updated.name,
+      productCode: updated.code,
+      internalCode: updated.internalCode,
+      manufacturerCode: updated.manufacturerCode,
+      categoryNames: updated.categoryNames ?? [],
+      delta: 0,
+      previousQuantity: updated.quantity,
+      newQuantity: updated.quantity,
+      type: archived ? 'PRODUCT_ARCHIVE' : 'PRODUCT_UNARCHIVE',
+      operatorName: operatorName,
+      pinUsed: pin != null && pin.isNotEmpty ? '****' : null,
+      notes: archived
+          ? 'Produto movido para Arquivados'
+          : 'Produto desarquivado (retornado ao estoque ativo)',
+      createdAt: DateTime.now(),
+    );
+    await _recordMovement(movement);
+
+    if (_isLocalMode || _client == null) {
+      _notifyLocal();
+      return updated;
+    }
+
+    unawaited(_backgroundSyncUpdateProduct(updated));
+    return updated;
   }
 
   Future<void> deleteProduct(String productId, {String? pin}) async {
@@ -2021,46 +2638,143 @@ class InventoryService {
     required String pin,
     String masterCategory = 'eletronica',
   }) async {
-    if (pin.trim().length != 4 || int.tryParse(pin.trim()) == null) {
+    final cleanName = name.trim();
+    final cleanPin = pin.trim();
+    if (cleanName.isEmpty) {
+      throw Exception('Informe o nome do funcionário ou operador.');
+    }
+    if (cleanPin.length != 4 || int.tryParse(cleanPin) == null) {
       throw Exception('O PIN deve conter exatamente 4 dígitos numéricos.');
+    }
+    if (_localPins.any((p) => p.pin == cleanPin)) {
+      throw Exception('Este PIN já está cadastrado para outro operador.');
+    }
+
+    final newPin = OperatorPinModel(
+      id: 'pin-${DateTime.now().millisecondsSinceEpoch}',
+      name: cleanName,
+      pin: cleanPin,
+      masterCategory: masterCategory.toLowerCase(),
+      isActive: true,
+      createdAt: DateTime.now(),
+    );
+
+    // Local-first (0ms)
+    _localPins.add(newPin);
+    _localPins.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    await LocalCacheService.instance.savePins(_localPins);
+    if (!_pinsStreamController.isClosed) {
+      _pinsStreamController.add(List.unmodifiable(_localPins));
     }
 
     if (_isLocalMode || _client == null) {
-      if (_localPins.any((p) => p.pin == pin.trim())) {
-        throw Exception('Este PIN já está cadastrado para outro operador.');
-      }
-      final newPin = OperatorPinModel(
-        id: 'pin-${DateTime.now().millisecondsSinceEpoch}',
-        name: name.trim(),
-        pin: pin.trim(),
-        masterCategory: masterCategory.toLowerCase(),
-        isActive: true,
-        createdAt: DateTime.now(),
-      );
-      _localPins.add(newPin);
-      await LocalCacheService.instance.savePins(_localPins);
-      if (!_pinsStreamController.isClosed) {
-        _pinsStreamController.add(List.unmodifiable(_localPins));
-      }
       _notifyLocal();
       return;
     }
 
-    final res = await _client!.from('operator_pins').insert({
-      'name': name.trim(),
-      'pin': pin.trim(),
-      'master_category': masterCategory.toLowerCase(),
-      'is_active': true,
-    }).select().maybeSingle();
+    unawaited(_backgroundSyncCreateOperatorPin(newPin));
+  }
 
-    if (res != null) {
-      final op = OperatorPinModel.fromMap(res);
-      _localPins.removeWhere((p) => p.id == op.id || p.pin == op.pin);
-      _localPins.add(op);
-      await LocalCacheService.instance.savePins(_localPins);
-      if (!_pinsStreamController.isClosed) {
-        _pinsStreamController.add(List.unmodifiable(_localPins));
+  Future<void> _backgroundSyncCreateOperatorPin(OperatorPinModel newPin) async {
+    if (_client == null || _isLocalMode) return;
+    try {
+      final res = await _client!.from('operator_pins').insert({
+        'name': newPin.name,
+        'pin': newPin.pin,
+        'master_category': newPin.masterCategory,
+        'is_active': true,
+      }).select().maybeSingle();
+
+      if (res != null) {
+        final op = OperatorPinModel.fromMap(res);
+        _localPins.removeWhere((p) => p.id == newPin.id || p.id == op.id || p.pin == op.pin);
+        _localPins.add(op);
+        _localPins.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        await LocalCacheService.instance.savePins(_localPins);
+        if (!_pinsStreamController.isClosed) {
+          _pinsStreamController.add(List.unmodifiable(_localPins));
+        }
       }
+    } catch (e) {
+      debugPrint('Aviso ao sincronizar novo PIN em segundo plano: $e');
+      await LocalCacheService.instance.queueSyncAction({
+        'action_type': 'create_operator_pin',
+        'pin': newPin.toMap(),
+      });
+    }
+  }
+
+  /// Atualiza o nome, PIN ou setor de um funcionário localmente (0ms) e sincroniza com o Supabase
+  Future<OperatorPinModel> updateOperatorPin({
+    required String id,
+    required String name,
+    required String pin,
+    required String masterCategory,
+  }) async {
+    final cleanName = name.trim();
+    final cleanPin = pin.trim();
+    if (cleanName.isEmpty) {
+      throw Exception('O nome do funcionário não pode ser vazio.');
+    }
+    if (cleanPin.length != 4 || int.tryParse(cleanPin) == null) {
+      throw Exception('O PIN deve conter exatamente 4 dígitos numéricos.');
+    }
+
+    final idx = _localPins.indexWhere((p) => p.id == id);
+    if (idx == -1) {
+      throw Exception('Funcionário/PIN não encontrado.');
+    }
+
+    final duplicatePin = _localPins.any((p) => p.id != id && p.pin == cleanPin);
+    if (duplicatePin) {
+      throw Exception('Este PIN já está em uso por outro funcionário.');
+    }
+
+    final updated = _localPins[idx].copyWith(
+      name: cleanName,
+      pin: cleanPin,
+      masterCategory: masterCategory.toLowerCase().trim(),
+    );
+
+    _localPins[idx] = updated;
+    _localPins.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    await LocalCacheService.instance.savePins(_localPins);
+    if (!_pinsStreamController.isClosed) {
+      _pinsStreamController.add(List.unmodifiable(_localPins));
+    }
+
+    if (_isLocalMode || _client == null) {
+      _notifyLocal();
+      return updated;
+    }
+
+    unawaited(_backgroundSyncUpdateOperatorPin(updated));
+    return updated;
+  }
+
+  Future<void> _backgroundSyncUpdateOperatorPin(OperatorPinModel updated) async {
+    if (_client == null || _isLocalMode) return;
+    try {
+      if (ProductModel.uuidRegex.hasMatch(updated.id)) {
+        await _client!.from('operator_pins').update({
+          'name': updated.name,
+          'pin': updated.pin,
+          'master_category': updated.masterCategory,
+        }).eq('id', updated.id);
+      } else {
+        await _client!.from('operator_pins').upsert({
+          'name': updated.name,
+          'pin': updated.pin,
+          'master_category': updated.masterCategory,
+          'is_active': true,
+        }, onConflict: 'pin');
+      }
+    } catch (e) {
+      debugPrint('Aviso ao sincronizar atualização de PIN em segundo plano: $e');
+      await LocalCacheService.instance.queueSyncAction({
+        'action_type': 'update_operator_pin',
+        'pin': updated.toMap(),
+      });
     }
   }
 
@@ -2068,22 +2782,37 @@ class InventoryService {
     required String productId,
     required List<String> masterCategories,
   }) async {
+    ProductModel? updatedProduct;
+    final lIdx = _localProducts.indexWhere((p) => p.id == productId);
+    if (lIdx != -1) {
+      updatedProduct = _localProducts[lIdx].copyWith(
+        masterCategories: masterCategories,
+        updatedAt: DateTime.now(),
+      );
+      _localProducts[lIdx] = updatedProduct;
+    }
+    final aIdx = _allProducts.indexWhere((p) => p.id == productId);
+    if (aIdx != -1) {
+      updatedProduct = _allProducts[aIdx].copyWith(
+        masterCategories: masterCategories,
+        updatedAt: DateTime.now(),
+      );
+      _allProducts[aIdx] = updatedProduct;
+    }
+
+    await LocalCacheService.instance.saveProducts(_allProducts.isNotEmpty ? _allProducts : _localProducts);
+    if (!_productsStreamController.isClosed) {
+      _productsStreamController.add(List.unmodifiable(_allProducts.isNotEmpty ? _allProducts : _localProducts));
+    }
+
     if (_isLocalMode || _client == null) {
-      final index = _localProducts.indexWhere((p) => p.id == productId);
-      if (index != -1) {
-        _localProducts[index] = _localProducts[index].copyWith(
-          masterCategories: masterCategories,
-          updatedAt: DateTime.now(),
-        );
-        _notifyLocal();
-      }
+      _notifyLocal();
       return;
     }
 
-    await _client!
-        .from(AppConstants.tableProducts)
-        .update({'master_categories': masterCategories})
-        .eq('id', productId);
+    if (updatedProduct != null) {
+      unawaited(_backgroundSyncUpdateProduct(updatedProduct));
+    }
   }
 
   Future<void> bulkAddProductsToMasterCategory({
@@ -2103,10 +2832,10 @@ class InventoryService {
 
     for (final id in productIds) {
       final pIdx = _allProducts.indexWhere((p) => p.id == id);
-      List<String> current = [];
-      if (pIdx != -1) {
-        current = List<String>.from(_allProducts[pIdx].masterCategories);
-      }
+      final lIdx = _localProducts.indexWhere((p) => p.id == id);
+      final baseProd = pIdx != -1 ? _allProducts[pIdx] : (lIdx != -1 ? _localProducts[lIdx] : null);
+      List<String> current = baseProd != null ? List<String>.from(baseProd.masterCategories) : [];
+
       if (!current.contains(catId)) {
         current.add(catId);
       }
@@ -2114,14 +2843,20 @@ class InventoryService {
         current.remove('outros');
       }
 
+      ProductModel? updatedP;
       if (pIdx != -1) {
-        _allProducts[pIdx] = _allProducts[pIdx].copyWith(masterCategories: current);
+        updatedP = _allProducts[pIdx].copyWith(masterCategories: current);
+        _allProducts[pIdx] = updatedP;
       }
-      final lIdx = _localProducts.indexWhere((p) => p.id == id);
       if (lIdx != -1) {
-        _localProducts[lIdx] = _localProducts[lIdx].copyWith(masterCategories: current);
+        updatedP = _localProducts[lIdx].copyWith(masterCategories: current);
+        _localProducts[lIdx] = updatedP;
       }
-      updatedMap[id] = current;
+      if (updatedP != null) {
+        updatedMap[id] = List<String>.from(updatedP.toMap(forSupabase: true)['master_categories'] as List);
+      } else {
+        updatedMap[id] = current;
+      }
     }
 
     await LocalCacheService.instance.saveProducts(_allProducts.isNotEmpty ? _allProducts : _localProducts);
@@ -2155,23 +2890,29 @@ class InventoryService {
 
     for (final id in productIds) {
       final pIdx = _allProducts.indexWhere((p) => p.id == id);
-      List<String> current = [];
-      if (pIdx != -1) {
-        current = List<String>.from(_allProducts[pIdx].masterCategories);
-      }
+      final lIdx = _localProducts.indexWhere((p) => p.id == id);
+      final baseProd = pIdx != -1 ? _allProducts[pIdx] : (lIdx != -1 ? _localProducts[lIdx] : null);
+      List<String> current = baseProd != null ? List<String>.from(baseProd.masterCategories) : [];
+
       current.remove(catId);
       if (current.isEmpty) {
         current.add('outros');
       }
 
+      ProductModel? updatedP;
       if (pIdx != -1) {
-        _allProducts[pIdx] = _allProducts[pIdx].copyWith(masterCategories: current);
+        updatedP = _allProducts[pIdx].copyWith(masterCategories: current);
+        _allProducts[pIdx] = updatedP;
       }
-      final lIdx = _localProducts.indexWhere((p) => p.id == id);
       if (lIdx != -1) {
-        _localProducts[lIdx] = _localProducts[lIdx].copyWith(masterCategories: current);
+        updatedP = _localProducts[lIdx].copyWith(masterCategories: current);
+        _localProducts[lIdx] = updatedP;
       }
-      updatedMap[id] = current;
+      if (updatedP != null) {
+        updatedMap[id] = List<String>.from(updatedP.toMap(forSupabase: true)['master_categories'] as List);
+      } else {
+        updatedMap[id] = current;
+      }
     }
 
     await LocalCacheService.instance.saveProducts(_allProducts.isNotEmpty ? _allProducts : _localProducts);
@@ -2221,7 +2962,22 @@ class InventoryService {
       return;
     }
 
-    await _client!.from('operator_pins').delete().eq('id', id);
+    unawaited(_backgroundSyncDeleteOperatorPin(id));
+  }
+
+  Future<void> _backgroundSyncDeleteOperatorPin(String id) async {
+    if (_client == null || _isLocalMode) return;
+    try {
+      if (ProductModel.uuidRegex.hasMatch(id)) {
+        await _client!.from('operator_pins').delete().eq('id', id);
+      }
+    } catch (e) {
+      debugPrint('Aviso ao sincronizar exclusão de PIN em segundo plano: $e');
+      await LocalCacheService.instance.queueSyncAction({
+        'action_type': 'delete_operator_pin',
+        'id': id,
+      });
+    }
   }
 
   // ---------------------------------------------------------------------------

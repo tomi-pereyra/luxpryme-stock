@@ -12,12 +12,14 @@ class ProductFormDialog extends StatefulWidget {
   final ProductModel? productToEdit;
   final List<CategoryModel> categories;
   final String? initialCategoryId;
+  final String? initialSectorId;
 
   const ProductFormDialog({
     super.key,
     this.productToEdit,
     required this.categories,
     this.initialCategoryId,
+    this.initialSectorId,
   });
 
   @override
@@ -39,6 +41,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   late Set<String> _selectedCategoryIds;
   late Set<String> _selectedSubcategories;
   final Set<String> _extraAvailableSubcategories = {};
+  bool _showAllSectorCategories = false;
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -61,17 +64,23 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _locationController = TextEditingController(text: p?.location ?? '');
     _notesController = TextEditingController(text: p?.notes ?? '');
 
-    // Inicializa categorias mestres
-    _selectedMasterCategories = Set.from(p?.masterCategories ?? ['eletronica']);
+    // Inicializa categorias mestres (setores)
+    if (p != null && p.masterCategories.isNotEmpty) {
+      _selectedMasterCategories = Set.from(p.masterCategories);
+    } else if (widget.initialSectorId != null &&
+        widget.initialSectorId!.isNotEmpty &&
+        widget.initialSectorId != 'todas') {
+      _selectedMasterCategories = {widget.initialSectorId!};
+    } else {
+      _selectedMasterCategories = {'eletronica'};
+    }
     if (_selectedMasterCategories.isEmpty) _selectedMasterCategories = {'eletronica'};
 
-    // Inicializa categorias selecionadas
-    if (p != null && p.categoryIds.isNotEmpty) {
+    // Inicializa categorias selecionadas (permite vazio caso categoria tenha sido excluída)
+    if (p != null) {
       _selectedCategoryIds = Set.from(p.categoryIds);
     } else if (widget.initialCategoryId != null) {
       _selectedCategoryIds = {widget.initialCategoryId!};
-    } else if (widget.categories.isNotEmpty) {
-      _selectedCategoryIds = {widget.categories.first.id};
     } else {
       _selectedCategoryIds = {};
     }
@@ -154,13 +163,6 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   Future<void> _handleSave() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_selectedCategoryIds.isEmpty) {
-      setState(() {
-        _errorMessage = 'Selecione ao menos uma categoria para o item.';
-      });
-      return;
-    }
-
     final int qty = int.tryParse(_quantityController.text.trim()) ?? 0;
     final int minQty = int.tryParse(_minQuantityController.text.trim()) ?? 10;
 
@@ -177,9 +179,14 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     });
 
     try {
-      final categoryList = _selectedCategoryIds.toList();
-      final categoryNameList = widget.categories
-          .where((c) => _selectedCategoryIds.contains(c.id))
+      final liveCategories = InventoryService.instance.currentCategories.isNotEmpty
+          ? InventoryService.instance.currentCategories
+          : widget.categories;
+      final validSelectedIds = _selectedCategoryIds
+          .where((cid) => liveCategories.any((c) => c.id == cid))
+          .toList();
+      final categoryNameList = liveCategories
+          .where((c) => validSelectedIds.contains(c.id))
           .map((c) => c.name)
           .toList();
 
@@ -199,8 +206,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         code: internalCode ?? manufacturerCode,
         internalCode: internalCode,
         manufacturerCode: manufacturerCode,
+        barcode: widget.productToEdit?.barcode,
         masterCategories: _selectedMasterCategories.toList(),
-        categoryIds: categoryList,
+        categoryIds: validSelectedIds,
         categoryNames: categoryNameList,
         subcategories: subcategoriesList,
         subcategory: subcategory,
@@ -212,6 +220,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         notes: _notesController.text.trim().isEmpty
             ? null
             : _notesController.text.trim(),
+        isArchived: widget.productToEdit?.isArchived ?? false,
+        createdAt: widget.productToEdit?.createdAt,
       );
 
       if (isEditing) {
@@ -451,75 +461,147 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                       ),
                       const SizedBox(height: 18),
 
-                      // Múltiplas Categorias
+                      // Múltiplas Categorias (Sincronizadas em Tempo Real e Filtradas por Setor)
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            'Categorias (Pode marcar mais de uma) *',
+                            'Categorias (Opcional / Múltiplas)',
                             style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
                           ),
-                          InkWell(
-                            onTap: () async {
-                              await showDialog(
-                                context: context,
-                                builder: (_) => const CategoriesManageDialog(),
-                              );
-                            },
-                            child: Text(
-                              '+ Gerenciar categorias',
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.primary,
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              InkWell(
+                                onTap: () {
+                                  setState(() {
+                                    _showAllSectorCategories = !_showAllSectorCategories;
+                                  });
+                                },
+                                child: Text(
+                                  _showAllSectorCategories ? 'Só deste setor' : 'Ver todas',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
                               ),
-                            ),
+                              const SizedBox(width: 12),
+                              InkWell(
+                                onTap: () async {
+                                  final firstSector = _selectedMasterCategories.isNotEmpty
+                                      ? _selectedMasterCategories.first
+                                      : null;
+                                  await showDialog(
+                                    context: context,
+                                    builder: (_) => CategoriesManageDialog(
+                                      initialSectorId: firstSector,
+                                    ),
+                                  );
+                                  if (mounted) setState(() {});
+                                },
+                                child: Text(
+                                  '+ Gerenciar categorias',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
                       const SizedBox(height: 8),
 
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppColors.background,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: AppColors.border),
-                        ),
-                        child: Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: widget.categories.map((cat) {
-                            final isSelected = _selectedCategoryIds.contains(cat.id);
-                            return FilterChip(
-                              label: Text(
-                                cat.name,
-                                style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                                  color: isSelected ? AppColors.primaryDark : AppColors.textPrimary,
+                      StreamBuilder<List<CategoryModel>>(
+                        stream: InventoryService.instance.streamCategories(),
+                        builder: (context, catSnap) {
+                          final liveCats = catSnap.data ??
+                              (InventoryService.instance.currentCategories.isNotEmpty
+                                  ? InventoryService.instance.currentCategories
+                                  : widget.categories);
+
+                          List<CategoryModel> visibleCats;
+                          if (_showAllSectorCategories) {
+                            visibleCats = liveCats;
+                          } else {
+                            final sectorSet = <CategoryModel>{};
+                            for (final sId in _selectedMasterCategories) {
+                              sectorSet.addAll(
+                                InventoryService.instance.getCategoriesForSector(
+                                  sId,
+                                  allCategories: liveCats,
                                 ),
+                              );
+                            }
+                            for (final c in liveCats) {
+                              if (_selectedCategoryIds.contains(c.id)) {
+                                sectorSet.add(c);
+                              }
+                            }
+                            visibleCats = sectorSet.isNotEmpty ? sectorSet.toList() : liveCats;
+                            visibleCats.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+                          }
+
+                          if (visibleCats.isEmpty) {
+                            return Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: AppColors.background,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: AppColors.border),
                               ),
-                              selected: isSelected,
-                              selectedColor: AppColors.primaryContainer,
-                              checkmarkColor: AppColors.primary,
-                              side: BorderSide(
-                                color: isSelected ? AppColors.primary : AppColors.border,
+                              child: Text(
+                                'Nenhuma categoria neste setor. Clique em "+ Gerenciar categorias" para criar.',
+                                style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
                               ),
-                              onSelected: (selected) {
-                                setState(() {
-                                  if (selected) {
-                                    _selectedCategoryIds.add(cat.id);
-                                  } else {
-                                    if (_selectedCategoryIds.length > 1) {
-                                      _selectedCategoryIds.remove(cat.id);
-                                    }
-                                  }
-                                });
-                              },
                             );
-                          }).toList(),
-                        ),
+                          }
+
+                          return Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppColors.background,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: AppColors.border),
+                            ),
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: visibleCats.map((cat) {
+                                final isSelected = _selectedCategoryIds.contains(cat.id);
+                                return FilterChip(
+                                  label: Text(
+                                    cat.name,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                      color: isSelected ? AppColors.primaryDark : AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  selected: isSelected,
+                                  selectedColor: AppColors.primaryContainer,
+                                  checkmarkColor: AppColors.primary,
+                                  side: BorderSide(
+                                    color: isSelected ? AppColors.primary : AppColors.border,
+                                  ),
+                                  onSelected: (selected) {
+                                    setState(() {
+                                      if (selected) {
+                                        _selectedCategoryIds.add(cat.id);
+                                      } else {
+                                        _selectedCategoryIds.remove(cat.id);
+                                      }
+                                    });
+                                  },
+                                );
+                              }).toList(),
+                            ),
+                          );
+                        },
                       ),
                       const SizedBox(height: 16),
 

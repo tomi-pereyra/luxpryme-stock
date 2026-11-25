@@ -13,6 +13,7 @@ class ProductCard extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onOpenCart;
   final VoidCallback? onMoveMasterCategory;
+  final VoidCallback? onArchiveToggle;
 
   const ProductCard({
     super.key,
@@ -21,6 +22,7 @@ class ProductCard extends StatelessWidget {
     required this.onDelete,
     required this.onOpenCart,
     this.onMoveMasterCategory,
+    this.onArchiveToggle,
   });
 
   Color _getStatusColor() {
@@ -107,6 +109,30 @@ class ProductCard extends StatelessWidget {
                     spacing: 6,
                     runSpacing: 4,
                     children: [
+                      if (product.isArchived)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF3C7),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.4)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.archive_outlined, size: 11, color: Color(0xFFB45309)),
+                              const SizedBox(width: 3),
+                              Text(
+                                'ARQUIVADO',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFFB45309),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       // Badges de Categoria Mestre Dinâmicas
                       ...product.masterCategories.map((mc) {
                         final found = InventoryService.instance.masterCategories.firstWhere(
@@ -253,9 +279,10 @@ class ProductCard extends StatelessWidget {
                     if (val == 'edit') onEdit();
                     if (val == 'delete') onDelete();
                     if (val == 'move_category') onMoveMasterCategory?.call();
+                    if (val == 'archive_toggle') onArchiveToggle?.call();
                   },
                   itemBuilder: (context) => [
-                    if (InventoryService.instance.isAdminUser && onMoveMasterCategory != null)
+                    if (onMoveMasterCategory != null)
                       const PopupMenuItem(
                         value: 'move_category',
                         child: Row(
@@ -276,6 +303,21 @@ class ProductCard extends StatelessWidget {
                         ],
                       ),
                     ),
+                    if (onArchiveToggle != null)
+                      PopupMenuItem(
+                        value: 'archive_toggle',
+                        child: Row(
+                          children: [
+                            Icon(
+                              product.isArchived ? Icons.unarchive_outlined : Icons.archive_outlined,
+                              size: 18,
+                              color: product.isArchived ? AppColors.stockNormal : const Color(0xFFD97706),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(product.isArchived ? 'Desarquivar item' : 'Arquivar item'),
+                          ],
+                        ),
+                      ),
                     const PopupMenuItem(
                       value: 'delete',
                       child: Row(

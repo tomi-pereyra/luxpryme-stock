@@ -17,10 +17,19 @@ class OperatorPinModel {
     required this.createdAt,
   });
 
+  static String? Function(String sectorId)? customSectorNameResolver;
+
   bool get isMasterPin => masterCategory == 'todas';
   bool get canAccessAll => isMasterPin;
 
   String get masterCategoryLabel {
+    if (masterCategory.toLowerCase() == 'todas') {
+      return 'Mestre (Todos os Setores)';
+    }
+    final resolved = customSectorNameResolver?.call(masterCategory.toLowerCase());
+    if (resolved != null && resolved.trim().isNotEmpty) {
+      return resolved;
+    }
     switch (masterCategory.toLowerCase()) {
       case 'todas':
         return 'Mestre (Todos os Setores)';

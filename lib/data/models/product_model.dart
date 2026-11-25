@@ -13,8 +13,11 @@ class ProductModel {
   final int minQuantity;
   final String? location;
   final String? notes;
+  final bool isArchived;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+
+  static const String archivedTag = '__archived__';
 
   const ProductModel({
     required this.id,
@@ -32,6 +35,7 @@ class ProductModel {
     this.minQuantity = 10,
     this.location,
     this.notes,
+    this.isArchived = false,
     this.createdAt,
     this.updatedAt,
   }) : _legacySubcategory = subcategory;
@@ -222,15 +226,60 @@ class ProductModel {
     return score;
   }
 
+  /// Comparador inteligente por Código Interno (numérico natural + alfanumérico; itens sem código ficam no final em ordem alfabética)
+  static int compareByInternalCode(ProductModel a, ProductModel b) {
+    final codeA = (a.internalCode ?? a.code ?? '').trim();
+    final codeB = (b.internalCode ?? b.code ?? '').trim();
+
+    if (codeA.isEmpty && codeB.isEmpty) {
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    }
+    if (codeA.isEmpty) return 1;
+    if (codeB.isEmpty) return -1;
+
+    final intA = int.tryParse(codeA);
+    final intB = int.tryParse(codeB);
+    if (intA != null && intB != null && intA != intB) {
+      return intA.compareTo(intB);
+    }
+
+    final partsA = RegExp(r'(\d+|\D+)').allMatches(codeA.toLowerCase()).map((m) => m.group(0)!).toList();
+    final partsB = RegExp(r'(\d+|\D+)').allMatches(codeB.toLowerCase()).map((m) => m.group(0)!).toList();
+    final minLen = partsA.length < partsB.length ? partsA.length : partsB.length;
+
+    for (int i = 0; i < minLen; i++) {
+      final pA = partsA[i];
+      final pB = partsB[i];
+      if (pA == pB) continue;
+      final nA = int.tryParse(pA);
+      final nB = int.tryParse(pB);
+      if (nA != null && nB != null) {
+        if (nA != nB) return nA.compareTo(nB);
+      } else {
+        return pA.compareTo(pB);
+      }
+    }
+
+    if (partsA.length != partsB.length) {
+      return partsA.length.compareTo(partsB.length);
+    }
+    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  }
+
   factory ProductModel.fromMap(Map<String, dynamic> map,
       {List<String>? categoryNames}) {
-    // Categorias Mestres
+    // Categorias Mestres + Flag de Arquivamento
+    bool parsedArchived = map['is_archived'] == true;
     List<String> parsedMasterCats = [];
     if (map['master_categories'] is List) {
-      parsedMasterCats = (map['master_categories'] as List)
+      final rawCats = (map['master_categories'] as List)
           .map((e) => e.toString().trim().toLowerCase())
           .where((e) => e.isNotEmpty)
           .toList();
+      if (rawCats.contains(archivedTag)) {
+        parsedArchived = true;
+      }
+      parsedMasterCats = rawCats.where((e) => e != archivedTag).toList();
     }
     if (parsedMasterCats.isEmpty) {
       parsedMasterCats = ['eletronica'];
@@ -301,6 +350,7 @@ class ProductModel {
       minQuantity: (map['min_quantity'] as num?)?.toInt() ?? 10,
       location: map['location']?.toString(),
       notes: cleanNotes,
+      isArchived: parsedArchived,
       createdAt: map['created_at'] != null
           ? DateTime.tryParse(map['created_at'].toString())
           : null,
@@ -314,12 +364,21 @@ class ProductModel {
     r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
   );
 
-  Map<String, dynamic> toMap({bool forDatabaseInsert = false}) {
+  Map<String, dynamic> toMap({
+    bool forDatabaseInsert = false,
+    bool forSupabase = false,
+  }) {
     final isValidId = uuidRegex.hasMatch(id);
     final validCategoryIds = categoryIds.where((c) => uuidRegex.hasMatch(c)).toList();
     final validCategoryId = (categoryId.isNotEmpty && uuidRegex.hasMatch(categoryId))
         ? categoryId
         : (validCategoryIds.isNotEmpty ? validCategoryIds.first : null);
+
+    final cleanSectors = masterCategories.where((c) => c != archivedTag).toList();
+    final effectiveSectors = cleanSectors.isEmpty ? <String>['eletronica'] : cleanSectors;
+    final serializedMasterCats = isArchived
+        ? <String>[...effectiveSectors, archivedTag]
+        : effectiveSectors;
 
     final map = <String, dynamic>{
       'name': name,
@@ -327,13 +386,14 @@ class ProductModel {
       if (internalCode != null && internalCode!.isNotEmpty) 'internal_code': internalCode,
       if (manufacturerCode != null && manufacturerCode!.isNotEmpty) 'manufacturer_code': manufacturerCode,
       if (barcode != null && barcode!.isNotEmpty) 'barcode': barcode,
-      'master_categories': masterCategories,
+      'master_categories': serializedMasterCats,
       'subcategories': subcategories,
       if (subcategory != null) 'subcategory': subcategory,
       'quantity': quantity,
       'min_quantity': minQuantity,
       if (location != null && location!.isNotEmpty) 'location': location,
       if (notes != null && notes!.isNotEmpty) 'notes': notes,
+      if (!forDatabaseInsert && !forSupabase) 'is_archived': isArchived,
     };
 
     if (forDatabaseInsert) {
@@ -346,6 +406,9 @@ class ProductModel {
       if (validCategoryIds.isNotEmpty) {
         map['category_ids'] = validCategoryIds;
       }
+    } else if (forSupabase) {
+      map['category_ids'] = validCategoryIds;
+      map['category_id'] = validCategoryId;
     } else {
       if (id.isNotEmpty) map['id'] = id;
       map['category_ids'] = categoryIds;
@@ -371,6 +434,7 @@ class ProductModel {
     int? minQuantity,
     String? location,
     String? notes,
+    bool? isArchived,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -394,6 +458,7 @@ class ProductModel {
       minQuantity: minQuantity ?? this.minQuantity,
       location: location ?? this.location,
       notes: notes ?? this.notes,
+      isArchived: isArchived ?? this.isArchived,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

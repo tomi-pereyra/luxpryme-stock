@@ -82,6 +82,164 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     }
   }
 
+  Future<void> _openEditPinDialog(OperatorPinModel pinModel) async {
+    if (!InventoryService.instance.isAdminUser) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: AppColors.stockZero,
+          content: Text('Acesso negado: Apenas tomibr20@gmail.com pode editar funcionários e PINs.'),
+        ),
+      );
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+    final editNameCtrl = TextEditingController(text: pinModel.name);
+    final editPinCtrl = TextEditingController(text: pinModel.pin);
+    String editSector = pinModel.masterCategory;
+    String? dialogError;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final masterCats = InventoryService.instance.masterCategories;
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.edit_outlined, color: AppColors.primary, size: 20),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Editar Funcionário / PIN',
+                    style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (dialogError != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: AppColors.stockZero.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          dialogError!,
+                          style: GoogleFonts.inter(fontSize: 12, color: AppColors.stockZero),
+                        ),
+                      ),
+                    ],
+                    TextField(
+                      controller: editNameCtrl,
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Nome do Funcionário / Operador *',
+                        prefixIcon: Icon(Icons.person_outline),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: editPinCtrl,
+                      keyboardType: TextInputType.number,
+                      maxLength: 4,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      decoration: const InputDecoration(
+                        labelText: 'PIN (4 dígitos) *',
+                        counterText: '',
+                        prefixIcon: Icon(Icons.pin_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'Setor Autorizado:',
+                      style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ChoiceChip(
+                          avatar: const Icon(Icons.stars, size: 16, color: Color(0xFF7C3AED)),
+                          label: const Text('Mestre (Todos os Setores)'),
+                          selected: editSector == 'todas',
+                          selectedColor: const Color(0xFFEDE9FE),
+                          onSelected: (val) {
+                            if (val) setDialogState(() => editSector = 'todas');
+                          },
+                        ),
+                        ...masterCats.map((mc) {
+                          final isSel = editSector.toLowerCase() == mc.id.toLowerCase();
+                          return ChoiceChip(
+                            avatar: Icon(mc.icon, size: 16, color: isSel ? mc.color : AppColors.textSecondary),
+                            label: Text(mc.name),
+                            selected: isSel,
+                            selectedColor: mc.color.withValues(alpha: 0.15),
+                            onSelected: (val) {
+                              if (val) setDialogState(() => editSector = mc.id);
+                            },
+                          );
+                        }),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.save_outlined, size: 18),
+                label: const Text('Salvar Alterações'),
+                onPressed: () async {
+                  try {
+                    final updated = await InventoryService.instance.updateOperatorPin(
+                      id: pinModel.id,
+                      name: editNameCtrl.text,
+                      pin: editPinCtrl.text,
+                      masterCategory: editSector,
+                    );
+                    if (ctx.mounted) Navigator.pop(ctx);
+                    messenger.showSnackBar(
+                      SnackBar(
+                        backgroundColor: AppColors.stockNormal,
+                        content: Text('Funcionário "${updated.name}" atualizado com sucesso!'),
+                      ),
+                    );
+                  } catch (e) {
+                    setDialogState(() {
+                      dialogError = e.toString().replaceAll('Exception: ', '');
+                    });
+                  }
+                },
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _handleDeletePin(OperatorPinModel pinModel) async {
     if (!InventoryService.instance.isAdminUser) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -574,11 +732,21 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                                   style: GoogleFonts.inter(
                                       fontSize: 12, color: AppColors.textSecondary),
                                 ),
-                                trailing: IconButton(
-                                  icon: const Icon(Icons.delete_outline,
-                                      color: AppColors.stockZero),
-                                  tooltip: 'Revogar este PIN',
-                                  onPressed: () => _handleDeletePin(p),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.edit_outlined, color: AppColors.primary),
+                                      tooltip: 'Editar nome, PIN ou setor',
+                                      onPressed: () => _openEditPinDialog(p),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline,
+                                          color: AppColors.stockZero),
+                                      tooltip: 'Revogar este PIN',
+                                      onPressed: () => _handleDeletePin(p),
+                                    ),
+                                  ],
                                 ),
                               );
                             },
