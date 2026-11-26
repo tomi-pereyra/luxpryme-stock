@@ -5,6 +5,7 @@ import '../../../data/models/category_model.dart';
 import '../../../data/models/master_category_model.dart';
 import '../../../data/models/product_model.dart';
 import '../../../data/services/inventory_service.dart';
+import 'batch_change_category_dialog.dart';
 import 'master_categories_manage_dialog.dart';
 
 class CategoriesManageDialog extends StatefulWidget {
@@ -369,6 +370,23 @@ class _CategoriesManageDialogState extends State<CategoriesManageDialog> {
                       MasterCategoriesManageDialog.show(context);
                     },
                   ),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    icon: const Icon(Icons.swap_horiz_rounded, size: 16),
+                    label: Text(
+                      'Trocar Produtos de Categoria',
+                      style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600),
+                    ),
+                    onPressed: () {
+                      BatchChangeCategoryDialog.show(
+                        context,
+                        initialSectorId: widget.initialSectorId,
+                      );
+                    },
+                  ),
                   if (_hasSpecificSector)
                     FilterChip(
                       label: Text(
@@ -578,6 +596,18 @@ class _CategoriesManageDialogState extends State<CategoriesManageDialog> {
                               trailing: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.swap_horiz_rounded,
+                                        size: 19, color: Color(0xFF0284C7)),
+                                    tooltip: 'Selecionar produtos desta categoria e trocar de categoria',
+                                    onPressed: () {
+                                      BatchChangeCategoryDialog.show(
+                                        context,
+                                        initialSourceCategoryId: cat.id,
+                                        initialSectorId: widget.initialSectorId,
+                                      );
+                                    },
+                                  ),
                                   IconButton(
                                     icon: const Icon(Icons.edit_outlined, size: 18, color: AppColors.primary),
                                     tooltip: 'Renomear / editar categoria',

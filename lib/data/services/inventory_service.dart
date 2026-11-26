@@ -818,6 +818,90 @@ class InventoryService {
     }
   }
 
+  /// Troca a categoria de múltiplos produtos selecionados localmente (0ms) e sincroniza em segundo plano com o Supabase.
+  Future<int> bulkChangeProductsCategory({
+    required List<String> productIds,
+    required String? sourceCategoryId,
+    required String? targetCategoryId,
+  }) async {
+    if (productIds.isEmpty) return 0;
+
+    final idSet = productIds.toSet();
+    final catMap = {for (final c in _localCategories) c.id: c.name};
+    final List<ProductModel> affectedProducts = [];
+    final seenIds = <String>{};
+
+    List<String> computeNewCatIds(List<String> currentIds) {
+      final updated = List<String>.from(currentIds);
+      if (sourceCategoryId != null && sourceCategoryId.isNotEmpty) {
+        updated.removeWhere((cid) => cid == sourceCategoryId);
+      } else {
+        updated.clear();
+      }
+      if (targetCategoryId != null &&
+          targetCategoryId.isNotEmpty &&
+          !updated.contains(targetCategoryId)) {
+        updated.add(targetCategoryId);
+      }
+      return updated;
+    }
+
+    for (int i = 0; i < _allProducts.length; i++) {
+      final p = _allProducts[i];
+      if (idSet.contains(p.id)) {
+        final newIds = computeNewCatIds(p.categoryIds);
+        final newNames = newIds.map((cid) => catMap[cid]).whereType<String>().toList();
+        final updatedP = p.copyWith(
+          categoryIds: newIds,
+          categoryNames: newNames,
+          updatedAt: DateTime.now(),
+        );
+        _allProducts[i] = updatedP;
+        if (seenIds.add(updatedP.id)) {
+          affectedProducts.add(updatedP);
+        }
+      }
+    }
+
+    for (int i = 0; i < _localProducts.length; i++) {
+      final p = _localProducts[i];
+      if (idSet.contains(p.id)) {
+        final newIds = computeNewCatIds(p.categoryIds);
+        final newNames = newIds.map((cid) => catMap[cid]).whereType<String>().toList();
+        final updatedP = p.copyWith(
+          categoryIds: newIds,
+          categoryNames: newNames,
+          updatedAt: DateTime.now(),
+        );
+        _localProducts[i] = updatedP;
+        if (seenIds.add(updatedP.id)) {
+          affectedProducts.add(updatedP);
+        }
+      }
+    }
+
+    if (affectedProducts.isNotEmpty) {
+      await LocalCacheService.instance.saveProducts(
+        _allProducts.isNotEmpty ? _allProducts : _localProducts,
+      );
+      if (!_productsStreamController.isClosed) {
+        _productsStreamController.add(
+          List.unmodifiable(_allProducts.isNotEmpty ? _allProducts : _localProducts),
+        );
+      }
+    }
+
+    if (_isLocalMode || _client == null) {
+      _notifyLocal();
+      return affectedProducts.length;
+    }
+
+    for (final prod in affectedProducts) {
+      unawaited(_backgroundSyncUpdateProduct(prod));
+    }
+    return affectedProducts.length;
+  }
+
   // ---------------------------------------------------------------------------
   // CATEGORIAS MESTRES INDUSTRIAIS (SETORES: ELETRÔNICA, PRODUÇÃO, ETC.)
   // ---------------------------------------------------------------------------

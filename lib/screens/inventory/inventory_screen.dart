@@ -23,6 +23,7 @@ import 'widgets/product_form_dialog.dart';
 import 'widgets/pin_confirmation_dialog.dart';
 import 'widgets/library_mode_screen.dart';
 import 'widgets/batch_add_master_category_dialog.dart';
+import 'widgets/batch_change_category_dialog.dart';
 import 'widgets/sector_report_dialog.dart';
 import 'widgets/stock_conflict_dialog.dart';
 import 'widgets/trash_bin_dialog.dart';
@@ -916,6 +917,38 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       builder: (_) => CategoriesManageDialog(
                         initialSectorId: _selectedMasterCategory,
                       ),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+
+                // 3a. Trocar Produtos de Categoria em Lote
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEDE9FE),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.swap_horiz_rounded,
+                        color: Color(0xFF6D28D9)),
+                  ),
+                  title: Text(
+                    'Trocar Categoria de Produtos',
+                    style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w700, fontSize: 14),
+                  ),
+                  subtitle: Text(
+                    'Selecionar produtos dentro de uma categoria e mudar para outra',
+                    style: GoogleFonts.inter(
+                        fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    BatchChangeCategoryDialog.show(
+                      context,
+                      initialSourceCategoryId: _selectedCategoryId,
+                      initialSectorId: _selectedMasterCategory,
                     );
                   },
                 ),
@@ -1901,6 +1934,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         builder: (_) => CategoriesManageDialog(
                           initialSectorId: _selectedMasterCategory,
                         ),
+                      );
+                    },
+                    onBatchChangeCategory: () {
+                      BatchChangeCategoryDialog.show(
+                        context,
+                        initialSourceCategoryId: _selectedCategoryId,
+                        initialSectorId: _selectedMasterCategory,
                       );
                     },
                   ),

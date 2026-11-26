@@ -13,6 +13,7 @@ import 'widgets/category_filter_bar.dart';
 import 'widgets/pin_confirmation_dialog.dart';
 import 'widgets/product_card.dart';
 import 'widgets/product_form_dialog.dart';
+import 'widgets/batch_change_category_dialog.dart';
 import 'widgets/sector_report_dialog.dart';
 
 class ArchivedProductsScreen extends StatefulWidget {
@@ -785,6 +786,14 @@ class _ArchivedProductsScreenState extends State<ArchivedProductsScreen> {
                           builder: (_) => CategoriesManageDialog(
                             initialSectorId: _selectedMasterCategory,
                           ),
+                        );
+                      },
+                      onBatchChangeCategory: () {
+                        BatchChangeCategoryDialog.show(
+                          context,
+                          initialSourceCategoryId: effectiveCategoryId,
+                          initialSectorId: _selectedMasterCategory,
+                          onlyArchived: true,
                         );
                       },
                     ),

@@ -1354,5 +1354,61 @@ void main() {
       expect(stored.unitSymbol, equals('un'));
       expect(stored.unitCategoryLabel, equals('Unidade'));
     });
+
+    test('bulkChangeProductsCategory seleciona produtos dentro de uma categoria e troca para outra categoria', () async {
+      final service = InventoryService.instance;
+      service.setMode(localMode: true);
+
+      for (final cName in ['Cat Origem Lote', 'Cat Destino Lote']) {
+        final existing = service.currentCategories.where((c) => c.name == cName).toList();
+        for (final c in existing) {
+          await service.deleteCategory(c.id);
+        }
+      }
+
+      final catSource = await service.createCategory(
+        name: 'Cat Origem Lote',
+        masterCategories: ['eletronica'],
+      );
+      final catTarget = await service.createCategory(
+        name: 'Cat Destino Lote',
+        masterCategories: ['eletronica'],
+      );
+
+      final p1 = ProductModel(
+        id: 'prod-cat-swap-1',
+        name: 'Item Troca Cat 1',
+        masterCategories: const ['eletronica'],
+        categoryIds: [catSource.id],
+        categoryNames: [catSource.name],
+        quantity: 20,
+      );
+      final p2 = ProductModel(
+        id: 'prod-cat-swap-2',
+        name: 'Item Troca Cat 2',
+        masterCategories: const ['eletronica'],
+        categoryIds: [catSource.id],
+        categoryNames: [catSource.name],
+        quantity: 35,
+      );
+
+      await service.createProduct(p1, pin: '2026');
+      await service.createProduct(p2, pin: '2026');
+
+      final changedCount = await service.bulkChangeProductsCategory(
+        productIds: ['prod-cat-swap-1', 'prod-cat-swap-2'],
+        sourceCategoryId: catSource.id,
+        targetCategoryId: catTarget.id,
+      );
+
+      expect(changedCount, equals(2));
+      final updated1 = service.currentProducts.firstWhere((p) => p.id == 'prod-cat-swap-1');
+      final updated2 = service.currentProducts.firstWhere((p) => p.id == 'prod-cat-swap-2');
+
+      expect(updated1.categoryIds, equals([catTarget.id]));
+      expect(updated1.categoryNames, contains('Cat Destino Lote'));
+      expect(updated2.categoryIds, equals([catTarget.id]));
+      expect(updated2.categoryNames, contains('Cat Destino Lote'));
+    });
   });
 }

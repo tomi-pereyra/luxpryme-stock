@@ -12,6 +12,7 @@ class CategoryFilterBar extends StatelessWidget {
   final ValueChanged<String?> onSelectSubcategory;
   final VoidCallback onManageCategories;
   final ValueChanged<String>? onAddSubcategory;
+  final VoidCallback? onBatchChangeCategory;
 
   const CategoryFilterBar({
     super.key,
@@ -23,6 +24,7 @@ class CategoryFilterBar extends StatelessWidget {
     required this.onSelectSubcategory,
     required this.onManageCategories,
     this.onAddSubcategory,
+    this.onBatchChangeCategory,
   });
 
   void _showAddSubcategoryDialog(BuildContext context) {
@@ -197,6 +199,27 @@ class CategoryFilterBar extends StatelessWidget {
             ],
 
             const SizedBox(width: 8),
+            // Botão para Selecionar Produtos desta Categoria e Trocar de Categoria
+            if (onBatchChangeCategory != null) ...[
+              ActionChip(
+                avatar: const Icon(Icons.swap_horiz_rounded, size: 15, color: AppColors.primary),
+                label: Text(
+                  'Trocar Produtos de Categoria',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primaryDark,
+                  ),
+                ),
+                backgroundColor: AppColors.primaryContainer,
+                side: const BorderSide(color: AppColors.primaryLight),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                onPressed: onBatchChangeCategory,
+              ),
+              const SizedBox(width: 8),
+            ],
             // Botão para Adicionar Nova Sub-categoria
             ActionChip(
               avatar: const Icon(Icons.add, size: 14, color: AppColors.textSecondary),
