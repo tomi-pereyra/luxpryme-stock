@@ -228,7 +228,7 @@ class _SectorReportDialogState extends State<SectorReportDialog> {
       return [
         _sanitizePdfText(code.isEmpty ? '-' : code),
         _sanitizePdfText(p.name),
-        '${p.quantity}',
+        '${p.quantity} ${p.unitSymbol}',
       ];
     }).toList();
 
@@ -377,7 +377,7 @@ class _SectorReportDialogState extends State<SectorReportDialog> {
     for (final p in reportItems) {
       final code = (p.internalCode ?? p.code ?? '').trim().replaceAll(';', ',');
       final cleanName = p.name.replaceAll(';', ',');
-      buffer.writeln('${code.isEmpty ? "-" : code};$cleanName;${p.quantity}');
+      buffer.writeln('${code.isEmpty ? "-" : code};$cleanName;${p.quantity} ${p.unitSymbol}');
     }
 
     final csvContent = buffer.toString();
@@ -718,7 +718,7 @@ class _SectorReportDialogState extends State<SectorReportDialog> {
                                                 SizedBox(
                                                   width: 85,
                                                   child: Text(
-                                                    '${p.quantity} un',
+                                                    '${p.quantity} ${p.unitSymbol}',
                                                     textAlign: TextAlign.right,
                                                     style: GoogleFonts.inter(
                                                       fontSize: 12.5,

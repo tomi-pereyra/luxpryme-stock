@@ -308,7 +308,7 @@ class _CartModalState extends State<CartModal> {
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                         Text(
-                                          'Estoque atual: ${item.product.quantity} un',
+                                          'Estoque atual: ${item.product.quantity} ${item.product.unitSymbol}',
                                           style: GoogleFonts.inter(
                                             fontSize: 11,
                                             color: AppColors.textSecondary,
@@ -329,9 +329,9 @@ class _CartModalState extends State<CartModal> {
                                         },
                                       ),
                                       Text(
-                                        '${item.quantity}',
+                                        '${item.quantity} ${item.product.unitSymbol}',
                                         style: GoogleFonts.inter(
-                                          fontSize: 15,
+                                          fontSize: 14,
                                           fontWeight: FontWeight.w800,
                                         ),
                                       ),

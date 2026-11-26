@@ -41,10 +41,10 @@ class ProductCard extends StatelessWidget {
   Future<void> _quickChangeStock(BuildContext context, int delta) async {
     if (delta < 0 && product.quantity <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           backgroundColor: AppColors.stockZero,
-          content: Text('O produto já está com 0 unidades.'),
-          duration: Duration(milliseconds: 1500),
+          content: Text('O produto já está com 0 ${product.unitSymbol}.'),
+          duration: const Duration(milliseconds: 1500),
         ),
       );
       return;
@@ -61,8 +61,8 @@ class ProductCard extends StatelessWidget {
             backgroundColor: delta > 0 ? AppColors.stockNormal : AppColors.primary,
             content: Text(
               delta > 0
-                  ? '+1 unidade registrada no histórico!'
-                  : '-1 unidade registrada no histórico!',
+                  ? '+1 ${product.unitSymbol} registrado no histórico!'
+                  : '-1 ${product.unitSymbol} registrado no histórico!',
               style: GoogleFonts.inter(fontWeight: FontWeight.w600),
             ),
             duration: const Duration(milliseconds: 1200),
@@ -440,17 +440,17 @@ class ProductCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          'un',
+                          product.unitSymbol,
                           style: GoogleFonts.inter(
                             fontSize: 12,
-                            fontWeight: FontWeight.w500,
+                            fontWeight: FontWeight.w600,
                             color: AppColors.textSecondary,
                           ),
                         ),
                         if (product.minQuantity > 0) ...[
                           const SizedBox(width: 6),
                           Text(
-                            '(Mín: ${product.minQuantity})',
+                            '(Mín: ${product.minQuantity} ${product.unitSymbol})',
                             style: GoogleFonts.inter(
                               fontSize: 11,
                               color: AppColors.textMuted,

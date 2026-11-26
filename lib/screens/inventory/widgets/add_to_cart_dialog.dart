@@ -38,9 +38,10 @@ class _AddToCartDialogState extends State<AddToCartDialog> {
     }
 
     if (_isWithdrawal && qty > widget.product.quantity) {
+      final u = widget.product.unitSymbol;
       setState(() {
         _errorMessage =
-            'Atenção: O estoque atual é de ${widget.product.quantity} un. Você não pode retirar $qty un.';
+            'Atenção: O estoque atual é de ${widget.product.quantity} $u. Você não pode retirar $qty $u.';
       });
       return;
     }
@@ -63,7 +64,7 @@ class _AddToCartDialogState extends State<AddToCartDialog> {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                '$qty un de "${widget.product.name}" adicionado ao carrinho.',
+                '$qty ${widget.product.unitSymbol} de "${widget.product.name}" adicionado ao carrinho.',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
@@ -140,7 +141,7 @@ class _AddToCartDialogState extends State<AddToCartDialog> {
                     style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
                   ),
                   Text(
-                    '${widget.product.quantity} unidades',
+                    '${widget.product.quantity} ${widget.product.unitSymbol}',
                     style: GoogleFonts.inter(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
@@ -236,7 +237,7 @@ class _AddToCartDialogState extends State<AddToCartDialog> {
 
             // Quantidade
             Text(
-              'Quantidade a ${_isWithdrawal ? "retirar" : "adicionar"}:',
+              'Quantidade (${widget.product.unitSymbol}) a ${_isWithdrawal ? "retirar" : "adicionar"}:',
               style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 6),
@@ -251,7 +252,7 @@ class _AddToCartDialogState extends State<AddToCartDialog> {
                   _isWithdrawal ? Icons.remove_circle_outline : Icons.add_circle_outline,
                   color: _isWithdrawal ? AppColors.stockZero : AppColors.stockNormal,
                 ),
-                suffixText: 'un',
+                suffixText: widget.product.unitSymbol,
               ),
             ),
 
@@ -265,7 +266,7 @@ class _AddToCartDialogState extends State<AddToCartDialog> {
                     minimumSize: const Size(0, 28),
                   ),
                   onPressed: () => _qtyController.text = numVal.toString(),
-                  child: Text('$numVal un', style: const TextStyle(fontSize: 11)),
+                  child: Text('$numVal ${widget.product.unitSymbol}', style: const TextStyle(fontSize: 11)),
                 );
               }).toList(),
             ),

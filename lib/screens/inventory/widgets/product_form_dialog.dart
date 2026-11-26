@@ -40,6 +40,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   late Set<String> _selectedMasterCategories;
   late Set<String> _selectedCategoryIds;
   late Set<String> _selectedSubcategories;
+  late String _selectedUnit;
   final Set<String> _extraAvailableSubcategories = {};
   bool _showAllSectorCategories = false;
   bool _isLoading = false;
@@ -63,6 +64,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         TextEditingController(text: (p?.minQuantity ?? 10).toString());
     _locationController = TextEditingController(text: p?.location ?? '');
     _notesController = TextEditingController(text: p?.notes ?? '');
+    _selectedUnit = ProductModel.normalizeUnit(p?.unit ?? 'un');
 
     // Inicializa categorias mestres (setores)
     if (p != null && p.masterCategories.isNotEmpty) {
@@ -214,6 +216,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         subcategory: subcategory,
         quantity: qty,
         minQuantity: minQty,
+        unit: _selectedUnit,
         location: _locationController.text.trim().isEmpty
             ? null
             : _locationController.text.trim(),
@@ -270,6 +273,49 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         });
       }
     }
+  }
+
+  Widget _buildUnitCategoryChip({
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primaryContainer : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isSelected ? AppColors.primary : AppColors.border,
+            width: isSelected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isSelected ? AppColors.primaryDark : AppColors.textSecondary,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected ? AppColors.primaryDark : AppColors.textPrimary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -710,6 +756,166 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                       }),
                       const SizedBox(height: 18),
 
+                      // Forma de Contagem / Unidade de Medida
+                      Text(
+                        'Como Contar este Produto (Unidade de Medida) *',
+                        style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.background,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _buildUnitCategoryChip(
+                                  label: 'Unidade (un)',
+                                  icon: Icons.widgets_outlined,
+                                  isSelected: _selectedUnit == 'un',
+                                  onTap: () => setState(() => _selectedUnit = 'un'),
+                                ),
+                                _buildUnitCategoryChip(
+                                  label: 'Peso (kg / g)',
+                                  icon: Icons.scale_outlined,
+                                  isSelected: _selectedUnit == 'kg' || _selectedUnit == 'g',
+                                  onTap: () {
+                                    setState(() {
+                                      if (_selectedUnit != 'kg' && _selectedUnit != 'g') {
+                                        _selectedUnit = 'kg';
+                                      }
+                                    });
+                                  },
+                                ),
+                                _buildUnitCategoryChip(
+                                  label: 'Metro (m / cm)',
+                                  icon: Icons.straighten_outlined,
+                                  isSelected: _selectedUnit == 'm' || _selectedUnit == 'cm',
+                                  onTap: () {
+                                    setState(() {
+                                      if (_selectedUnit != 'm' && _selectedUnit != 'cm') {
+                                        _selectedUnit = 'm';
+                                      }
+                                    });
+                                  },
+                                ),
+                                _buildUnitCategoryChip(
+                                  label: 'Volume (L / mL)',
+                                  icon: Icons.water_drop_outlined,
+                                  isSelected: _selectedUnit == 'L' || _selectedUnit == 'mL',
+                                  onTap: () {
+                                    setState(() {
+                                      if (_selectedUnit != 'L' && _selectedUnit != 'mL') {
+                                        _selectedUnit = 'L';
+                                      }
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                            if (_selectedUnit == 'kg' || _selectedUnit == 'g') ...[
+                              const SizedBox(height: 10),
+                              const Divider(height: 1),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Text(
+                                    'Unidade de Peso:',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                  ChoiceChip(
+                                    label: const Text('Quilogramas (kg)'),
+                                    selected: _selectedUnit == 'kg',
+                                    selectedColor: AppColors.primaryContainer,
+                                    onSelected: (_) => setState(() => _selectedUnit = 'kg'),
+                                  ),
+                                  ChoiceChip(
+                                    label: const Text('Gramas (g)'),
+                                    selected: _selectedUnit == 'g',
+                                    selectedColor: AppColors.primaryContainer,
+                                    onSelected: (_) => setState(() => _selectedUnit = 'g'),
+                                  ),
+                                ],
+                              ),
+                            ] else if (_selectedUnit == 'm' || _selectedUnit == 'cm') ...[
+                              const SizedBox(height: 10),
+                              const Divider(height: 1),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Text(
+                                    'Unidade de Comprimento:',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                  ChoiceChip(
+                                    label: const Text('Metros (m)'),
+                                    selected: _selectedUnit == 'm',
+                                    selectedColor: AppColors.primaryContainer,
+                                    onSelected: (_) => setState(() => _selectedUnit = 'm'),
+                                  ),
+                                  ChoiceChip(
+                                    label: const Text('Centímetros (cm)'),
+                                    selected: _selectedUnit == 'cm',
+                                    selectedColor: AppColors.primaryContainer,
+                                    onSelected: (_) => setState(() => _selectedUnit = 'cm'),
+                                  ),
+                                ],
+                              ),
+                            ] else if (_selectedUnit == 'L' || _selectedUnit == 'mL') ...[
+                              const SizedBox(height: 10),
+                              const Divider(height: 1),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Text(
+                                    'Unidade de Volume:',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                  ChoiceChip(
+                                    label: const Text('Litros (L)'),
+                                    selected: _selectedUnit == 'L',
+                                    selectedColor: AppColors.primaryContainer,
+                                    onSelected: (_) => setState(() => _selectedUnit = 'L'),
+                                  ),
+                                  ChoiceChip(
+                                    label: const Text('Mililitros (mL)'),
+                                    selected: _selectedUnit == 'mL',
+                                    selectedColor: AppColors.primaryContainer,
+                                    onSelected: (_) => setState(() => _selectedUnit = 'mL'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
                       // Quantidade e Estoque Mínimo
                       Row(
                         children: [
@@ -718,7 +924,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  isEditing ? 'Estoque Atual *' : 'Quantidade Inicial *',
+                                  isEditing
+                                      ? 'Estoque Atual ($_selectedUnit) *'
+                                      : 'Quantidade Inicial ($_selectedUnit) *',
                                   style: GoogleFonts.inter(
                                       fontSize: 13, fontWeight: FontWeight.w600),
                                 ),
@@ -727,9 +935,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                   controller: _quantityController,
                                   keyboardType: TextInputType.number,
                                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                                  decoration: const InputDecoration(
+                                  decoration: InputDecoration(
                                     hintText: '0',
-                                    suffixText: 'un',
+                                    suffixText: _selectedUnit,
                                   ),
                                   validator: (val) {
                                     if (val == null || val.trim().isEmpty) {
@@ -751,7 +959,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Estoque Mínimo (Alerta)',
+                                  'Estoque Mínimo ($_selectedUnit)',
                                   style: GoogleFonts.inter(
                                       fontSize: 13, fontWeight: FontWeight.w600),
                                 ),
@@ -760,9 +968,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                   controller: _minQuantityController,
                                   keyboardType: TextInputType.number,
                                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                                  decoration: const InputDecoration(
+                                  decoration: InputDecoration(
                                     hintText: '10',
-                                    suffixText: 'un',
+                                    suffixText: _selectedUnit,
                                   ),
                                 ),
                               ],

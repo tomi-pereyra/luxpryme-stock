@@ -1072,6 +1072,13 @@ void main() {
       final service = InventoryService.instance;
       service.setMode(localMode: true);
 
+      final existingCat = service.currentCategories
+          .where((c) => c.name == 'Cat Arquivados Teste')
+          .toList();
+      for (final c in existingCat) {
+        await service.deleteCategory(c.id);
+      }
+
       final cat = await service.createCategory(
         name: 'Cat Arquivados Teste',
         masterCategories: ['eletronica'],
@@ -1210,6 +1217,11 @@ void main() {
       final service = InventoryService.instance;
       service.setMode(localMode: true);
 
+      final prev7788 = await service.validatePin('7788');
+      if (prev7788 != null) await service.deleteOperatorPin(prev7788.id);
+      final prev7799 = await service.validatePin('7799');
+      if (prev7799 != null) await service.deleteOperatorPin(prev7799.id);
+
       await service.createOperatorPin(
         name: 'Carlos Antigo',
         pin: '7788',
@@ -1294,6 +1306,53 @@ void main() {
         sortOrder: SectorReportSortOrder.byInternalCode,
       );
       expect(archivedReport.map((p) => p.id).toList(), equals(['r4']));
+    });
+
+    test('Unidade de medida do produto (Unidade, Peso, Metro, Volume) persiste localmente e sincroniza com Supabase', () async {
+      final service = InventoryService.instance;
+      service.setMode(localMode: true);
+
+      final prodMetro = const ProductModel(
+        id: 'prod-unit-metro',
+        name: 'Cabo PP 2x1.5mm',
+        internalCode: 'CAB-15',
+        masterCategories: ['producao'],
+        categoryIds: [],
+        quantity: 250,
+        unit: 'm',
+      );
+      expect(prodMetro.unitSymbol, equals('m'));
+      expect(prodMetro.unitCategory, equals('metro'));
+      expect(prodMetro.unitCategoryLabel, equals('Metro'));
+
+      // Verifica serialização para o Supabase via master_categories (__unit:m__)
+      final supaMap = prodMetro.toMap(forSupabase: true);
+      expect(supaMap['master_categories'], containsAll(['producao', '__unit:m__']));
+      final restoredFromSupa = ProductModel.fromMap(supaMap);
+      expect(restoredFromSupa.unitSymbol, equals('m'));
+      expect(restoredFromSupa.masterCategories, equals(['producao']));
+
+      // Criação e edição da forma de contagem (Metro -> Peso kg -> Volume L -> Unidade un)
+      await service.createProduct(prodMetro, pin: '2026');
+      var stored = service.currentProducts.firstWhere((p) => p.id == 'prod-unit-metro');
+      expect(stored.unitSymbol, equals('m'));
+
+      await service.updateProduct(stored.copyWith(unit: 'kg', quantity: 15));
+      stored = service.currentProducts.firstWhere((p) => p.id == 'prod-unit-metro');
+      expect(stored.unitSymbol, equals('kg'));
+      expect(stored.unitCategoryLabel, equals('Peso'));
+
+      await service.updateProduct(stored.copyWith(unit: 'L', quantity: 5));
+      stored = service.currentProducts.firstWhere((p) => p.id == 'prod-unit-metro');
+      expect(stored.unitSymbol, equals('L'));
+      expect(stored.unitCategoryLabel, equals('Volume'));
+      final supaVolMap = stored.toMap(forSupabase: true);
+      expect(ProductModel.fromMap(supaVolMap).unitSymbol, equals('L'));
+
+      await service.updateProduct(stored.copyWith(unit: 'un', quantity: 100));
+      stored = service.currentProducts.firstWhere((p) => p.id == 'prod-unit-metro');
+      expect(stored.unitSymbol, equals('un'));
+      expect(stored.unitCategoryLabel, equals('Unidade'));
     });
   });
 }

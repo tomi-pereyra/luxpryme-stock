@@ -11,6 +11,7 @@ class ProductModel {
   final List<String> subcategories; // Múltiplas sub-categorias do item
   final int quantity;
   final int minQuantity;
+  final String unit;               // Unidade de contagem: 'un', 'kg', 'g', 'm', 'cm', 'L', 'mL'
   final String? location;
   final String? notes;
   final bool isArchived;
@@ -18,6 +19,47 @@ class ProductModel {
   final DateTime? updatedAt;
 
   static const String archivedTag = '__archived__';
+  static const String unitTagPrefix = '__unit:';
+  static const String unitTagSuffix = '__';
+
+  static const List<String> supportedUnits = ['un', 'kg', 'g', 'm', 'cm', 'L', 'mL'];
+
+  static String normalizeUnit(String? raw) {
+    final clean = (raw ?? '').trim().toLowerCase();
+    switch (clean) {
+      case 'un':
+      case 'und':
+      case 'unid':
+      case 'unidade':
+        return 'un';
+      case 'kg':
+      case 'quilo':
+      case 'quilograma':
+      case 'peso':
+        return 'kg';
+      case 'g':
+      case 'gr':
+      case 'grama':
+        return 'g';
+      case 'm':
+      case 'mt':
+      case 'metro':
+        return 'm';
+      case 'cm':
+      case 'centimetro':
+        return 'cm';
+      case 'l':
+      case 'lt':
+      case 'litro':
+      case 'volume':
+        return 'L';
+      case 'ml':
+      case 'mililitro':
+        return 'mL';
+      default:
+        return 'un';
+    }
+  }
 
   const ProductModel({
     required this.id,
@@ -33,12 +75,44 @@ class ProductModel {
     String? subcategory,
     required this.quantity,
     this.minQuantity = 10,
+    this.unit = 'un',
     this.location,
     this.notes,
     this.isArchived = false,
     this.createdAt,
     this.updatedAt,
   }) : _legacySubcategory = subcategory;
+
+  String get unitSymbol => normalizeUnit(unit);
+
+  String get unitCategory {
+    switch (unitSymbol) {
+      case 'kg':
+      case 'g':
+        return 'peso';
+      case 'm':
+      case 'cm':
+        return 'metro';
+      case 'L':
+      case 'mL':
+        return 'volume';
+      default:
+        return 'unidade';
+    }
+  }
+
+  String get unitCategoryLabel {
+    switch (unitCategory) {
+      case 'peso':
+        return 'Peso';
+      case 'metro':
+        return 'Metro';
+      case 'volume':
+        return 'Volume';
+      default:
+        return 'Unidade';
+    }
+  }
 
   final String? _legacySubcategory;
 
@@ -268,18 +342,33 @@ class ProductModel {
 
   factory ProductModel.fromMap(Map<String, dynamic> map,
       {List<String>? categoryNames}) {
-    // Categorias Mestres + Flag de Arquivamento
+    // Categorias Mestres + Flag de Arquivamento + Unidade de Contagem
     bool parsedArchived = map['is_archived'] == true;
+    String parsedUnit = map['unit'] != null
+        ? normalizeUnit(map['unit'].toString())
+        : 'un';
     List<String> parsedMasterCats = [];
     if (map['master_categories'] is List) {
       final rawCats = (map['master_categories'] as List)
-          .map((e) => e.toString().trim().toLowerCase())
+          .map((e) => e.toString().trim())
           .where((e) => e.isNotEmpty)
           .toList();
-      if (rawCats.contains(archivedTag)) {
-        parsedArchived = true;
+      for (final raw in rawCats) {
+        final lower = raw.toLowerCase();
+        if (lower == archivedTag) {
+          parsedArchived = true;
+        } else if (lower.startsWith(unitTagPrefix) &&
+            lower.endsWith(unitTagSuffix) &&
+            lower.length > unitTagPrefix.length + unitTagSuffix.length) {
+          final extracted = lower.substring(
+            unitTagPrefix.length,
+            lower.length - unitTagSuffix.length,
+          );
+          parsedUnit = normalizeUnit(extracted);
+        } else {
+          parsedMasterCats.add(lower);
+        }
       }
-      parsedMasterCats = rawCats.where((e) => e != archivedTag).toList();
     }
     if (parsedMasterCats.isEmpty) {
       parsedMasterCats = ['eletronica'];
@@ -348,6 +437,7 @@ class ProductModel {
       subcategories: parsedSubcategories,
       quantity: (map['quantity'] as num?)?.toInt() ?? 0,
       minQuantity: (map['min_quantity'] as num?)?.toInt() ?? 10,
+      unit: parsedUnit,
       location: map['location']?.toString(),
       notes: cleanNotes,
       isArchived: parsedArchived,
@@ -374,11 +464,19 @@ class ProductModel {
         ? categoryId
         : (validCategoryIds.isNotEmpty ? validCategoryIds.first : null);
 
-    final cleanSectors = masterCategories.where((c) => c != archivedTag).toList();
+    final cleanSectors = masterCategories
+        .where((c) =>
+            c != archivedTag &&
+            !(c.toLowerCase().startsWith(unitTagPrefix) &&
+                c.toLowerCase().endsWith(unitTagSuffix)))
+        .toList();
     final effectiveSectors = cleanSectors.isEmpty ? <String>['eletronica'] : cleanSectors;
-    final serializedMasterCats = isArchived
-        ? <String>[...effectiveSectors, archivedTag]
-        : effectiveSectors;
+    final normalizedUnit = normalizeUnit(unit);
+    final serializedMasterCats = <String>[
+      ...effectiveSectors,
+      if (isArchived) archivedTag,
+      if (normalizedUnit != 'un') '$unitTagPrefix${normalizedUnit.toLowerCase()}$unitTagSuffix',
+    ];
 
     final map = <String, dynamic>{
       'name': name,
@@ -393,7 +491,10 @@ class ProductModel {
       'min_quantity': minQuantity,
       if (location != null && location!.isNotEmpty) 'location': location,
       if (notes != null && notes!.isNotEmpty) 'notes': notes,
-      if (!forDatabaseInsert && !forSupabase) 'is_archived': isArchived,
+      if (!forDatabaseInsert && !forSupabase) ...{
+        'is_archived': isArchived,
+        'unit': normalizedUnit,
+      },
     };
 
     if (forDatabaseInsert) {
@@ -432,6 +533,7 @@ class ProductModel {
     String? subcategory,
     int? quantity,
     int? minQuantity,
+    String? unit,
     String? location,
     String? notes,
     bool? isArchived,
@@ -456,6 +558,7 @@ class ProductModel {
       subcategories: finalSubcats,
       quantity: quantity ?? this.quantity,
       minQuantity: minQuantity ?? this.minQuantity,
+      unit: unit != null ? normalizeUnit(unit) : this.unit,
       location: location ?? this.location,
       notes: notes ?? this.notes,
       isArchived: isArchived ?? this.isArchived,

@@ -397,7 +397,7 @@ class _TrashBinDialogState extends State<TrashBinDialog> {
                                           ),
                                         ),
                                       Text(
-                                        'Estoque: ${product.quantity} un',
+                                        'Estoque: ${product.quantity} ${product.unitSymbol}',
                                         style: GoogleFonts.inter(
                                           fontSize: 11,
                                           fontWeight: FontWeight.w600,
