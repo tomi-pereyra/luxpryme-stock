@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -87,6 +88,7 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   final TextEditingController _itemSearchController = TextEditingController();
+  Timer? _searchDebounce;
   bool _isFiltersExpanded = false;
 
   bool get _hasActiveFilters =>
@@ -164,15 +166,30 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   void initState() {
     super.initState();
-    _itemSearchController.addListener(() {
-      setState(() {
-        _searchItemQuery = _itemSearchController.text.trim();
-      });
+    _itemSearchController.addListener(_onSearchChanged);
+  }
+
+  void _onSearchChanged() {
+    _searchDebounce?.cancel();
+    final text = _itemSearchController.text.trim();
+    if (text.isEmpty) {
+      if (_searchItemQuery.isNotEmpty) {
+        setState(() => _searchItemQuery = '');
+      }
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 380), () {
+      if (!mounted) return;
+      if (_searchItemQuery != text) {
+        setState(() => _searchItemQuery = text);
+      }
     });
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _itemSearchController.removeListener(_onSearchChanged);
     _itemSearchController.dispose();
     super.dispose();
   }

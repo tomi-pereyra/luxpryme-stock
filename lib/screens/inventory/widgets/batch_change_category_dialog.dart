@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/constants/app_colors.dart';
@@ -51,6 +52,7 @@ class _BatchChangeCategoryDialogState extends State<BatchChangeCategoryDialog> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
+  Timer? _searchDebounce;
 
   String _activeFilterQuery = '';
   bool _isFilterPreservedAfterSelection = false;
@@ -65,25 +67,44 @@ class _BatchChangeCategoryDialogState extends State<BatchChangeCategoryDialog> {
   }
 
   void _onSearchInputChanged() {
+    _searchDebounce?.cancel();
     final text = _searchController.text;
     if (_isFilterPreservedAfterSelection) {
       if (text.isEmpty) return;
-      setState(() {
-        _isFilterPreservedAfterSelection = false;
-        _activeFilterQuery = text.trim();
+      _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+        if (!mounted) return;
+        setState(() {
+          _isFilterPreservedAfterSelection = false;
+          _activeFilterQuery = text.trim();
+        });
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(0);
+        }
       });
-      if (_scrollController.hasClients) {
-        _scrollController.jumpTo(0);
+      return;
+    }
+
+    if (text.trim().isEmpty) {
+      if (_activeFilterQuery.isNotEmpty) {
+        setState(() => _activeFilterQuery = '');
       }
       return;
     }
-    setState(() {
-      _activeFilterQuery = text.trim();
+
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      final trimmed = text.trim();
+      if (_activeFilterQuery != trimmed) {
+        setState(() {
+          _activeFilterQuery = trimmed;
+        });
+      }
     });
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.removeListener(_onSearchInputChanged);
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -92,6 +113,7 @@ class _BatchChangeCategoryDialogState extends State<BatchChangeCategoryDialog> {
   }
 
   void _onToggleProduct(ProductModel product) {
+    _searchDebounce?.cancel();
     setState(() {
       if (_selectedProductIds.contains(product.id)) {
         _selectedProductIds.remove(product.id);
@@ -243,18 +265,10 @@ class _BatchChangeCategoryDialogState extends State<BatchChangeCategoryDialog> {
 
             final filteredProducts = _activeFilterQuery.isEmpty
                 ? productsInSourceCategory
-                : (productsInSourceCategory
-                    .where((p) => p.matchesSearch(_activeFilterQuery))
-                    .toList()
-                  ..sort((a, b) {
-                    final sDiff = b
-                        .searchRelevance(_activeFilterQuery)
-                        .compareTo(a.searchRelevance(_activeFilterQuery));
-                    if (sDiff != 0) return sDiff;
-                    return a.name
-                        .toLowerCase()
-                        .compareTo(b.name.toLowerCase());
-                  }));
+                : ProductModel.filterAndSortByRelevance(
+                    productsInSourceCategory,
+                    _activeFilterQuery,
+                  );
 
             final allVisibleSelected = filteredProducts.isNotEmpty &&
                 filteredProducts.every((p) => _selectedProductIds.contains(p.id));

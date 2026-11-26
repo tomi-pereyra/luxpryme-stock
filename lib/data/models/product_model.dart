@@ -300,6 +300,34 @@ class ProductModel {
     return score;
   }
 
+  /// Filtra e ordena uma lista de produtos por relevância calculando a pontuação apenas 1 vez por item (O(N))
+  static List<ProductModel> filterAndSortByRelevance(
+    List<ProductModel> source,
+    String query, {
+    int Function(ProductModel a, ProductModel b)? tieBreaker,
+  }) {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return List<ProductModel>.from(source);
+
+    final scored = <({ProductModel product, int score})>[];
+    for (final p in source) {
+      if (p.matchesSearch(trimmed)) {
+        scored.add((product: p, score: p.searchRelevance(trimmed)));
+      }
+    }
+
+    scored.sort((a, b) {
+      final diff = b.score.compareTo(a.score);
+      if (diff != 0) return diff;
+      if (tieBreaker != null) {
+        return tieBreaker(a.product, b.product);
+      }
+      return a.product.name.toLowerCase().compareTo(b.product.name.toLowerCase());
+    });
+
+    return scored.map((e) => e.product).toList();
+  }
+
   /// Comparador inteligente por Código Interno (numérico natural + alfanumérico; itens sem código ficam no final em ordem alfabética)
   static int compareByInternalCode(ProductModel a, ProductModel b) {
     final codeA = (a.internalCode ?? a.code ?? '').trim();

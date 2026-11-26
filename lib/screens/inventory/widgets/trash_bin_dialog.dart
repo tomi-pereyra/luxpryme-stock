@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/constants/app_colors.dart';
@@ -22,21 +23,37 @@ class TrashBinDialog extends StatefulWidget {
 
 class _TrashBinDialogState extends State<TrashBinDialog> {
   final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounce;
   String _searchQuery = '';
   bool _isProcessing = false;
 
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(() {
-      setState(() {
-        _searchQuery = _searchController.text.trim();
-      });
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  void _onSearchChanged() {
+    _searchDebounce?.cancel();
+    final text = _searchController.text.trim();
+    if (text.isEmpty) {
+      if (_searchQuery.isNotEmpty) {
+        setState(() => _searchQuery = '');
+      }
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      if (_searchQuery != text) {
+        setState(() => _searchQuery = text);
+      }
     });
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     super.dispose();
   }
@@ -276,12 +293,7 @@ class _TrashBinDialogState extends State<TrashBinDialog> {
                   final allTrash = snapshot.data ?? [];
                   final filteredTrash = _searchQuery.isEmpty
                       ? allTrash
-                      : (allTrash.where((p) => p.matchesSearch(_searchQuery)).toList()
-                        ..sort((a, b) {
-                          final sDiff = b.searchRelevance(_searchQuery).compareTo(a.searchRelevance(_searchQuery));
-                          if (sDiff != 0) return sDiff;
-                          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-                        }));
+                      : ProductModel.filterAndSortByRelevance(allTrash, _searchQuery);
 
                   if (filteredTrash.isEmpty) {
                     return Center(

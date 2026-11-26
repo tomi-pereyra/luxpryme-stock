@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -49,6 +50,7 @@ class _BatchAddMasterCategoryDialogState
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
+  Timer? _searchDebounce;
   String _activeFilterQuery = '';
   bool _isFilterPreservedAfterSelection = false;
   bool _isSaving = false;
@@ -79,6 +81,7 @@ class _BatchAddMasterCategoryDialogState
   }
 
   void _onSearchInputChanged() {
+    _searchDebounce?.cancel();
     final text = _searchController.text;
     if (_isFilterPreservedAfterSelection) {
       // Se o campo de texto foi limpo programaticamente ao selecionar, mantém a lista visível
@@ -86,24 +89,41 @@ class _BatchAddMasterCategoryDialogState
       if (text.isEmpty) {
         return;
       }
-      // O usuário começou a digitar novamente! Atualiza o filtro e reposiciona no topo
-      setState(() {
-        _isFilterPreservedAfterSelection = false;
-        _activeFilterQuery = text.trim();
+      // O usuário começou a digitar novamente! Aguarda terminar de digitar para filtrar e reposicionar
+      _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+        if (!mounted) return;
+        setState(() {
+          _isFilterPreservedAfterSelection = false;
+          _activeFilterQuery = text.trim();
+        });
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(0);
+        }
       });
-      if (_scrollController.hasClients) {
-        _scrollController.jumpTo(0);
+      return;
+    }
+
+    if (text.trim().isEmpty) {
+      if (_activeFilterQuery.isNotEmpty) {
+        setState(() => _activeFilterQuery = '');
       }
       return;
     }
 
-    setState(() {
-      _activeFilterQuery = text.trim();
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      final trimmed = text.trim();
+      if (_activeFilterQuery != trimmed) {
+        setState(() {
+          _activeFilterQuery = trimmed;
+        });
+      }
     });
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.removeListener(_onSearchInputChanged);
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -112,6 +132,7 @@ class _BatchAddMasterCategoryDialogState
   }
 
   void _onToggleProduct(ProductModel product) {
+    _searchDebounce?.cancel();
     setState(() {
       if (_selectedProductIds.contains(product.id)) {
         _selectedProductIds.remove(product.id);
@@ -491,14 +512,10 @@ class _BatchAddMasterCategoryDialogState
 
                   final filteredProducts = _activeFilterQuery.isEmpty
                       ? scopedProducts
-                      : (scopedProducts
-                          .where((p) => p.matchesSearch(_activeFilterQuery))
-                          .toList()
-                        ..sort((a, b) {
-                          final sDiff = b.searchRelevance(_activeFilterQuery).compareTo(a.searchRelevance(_activeFilterQuery));
-                          if (sDiff != 0) return sDiff;
-                          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-                        }));
+                      : ProductModel.filterAndSortByRelevance(
+                          scopedProducts,
+                          _activeFilterQuery,
+                        );
 
                   if (filteredProducts.isEmpty) {
                     return Center(

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -49,6 +50,7 @@ class InventoryScreen extends StatefulWidget {
 
 class _InventoryScreenState extends State<InventoryScreen> {
   final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounce;
 
   String _searchQuery = '';
   String _selectedMasterCategory = 'todas';
@@ -64,15 +66,48 @@ class _InventoryScreenState extends State<InventoryScreen> {
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(() {
-      setState(() {
-        _searchQuery = _searchController.text.trim();
-      });
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  void _onSearchChanged() {
+    _searchDebounce?.cancel();
+    final text = _searchController.text.trim();
+    // Se o campo foi totalmente limpo, atualiza imediatamente
+    if (text.isEmpty) {
+      if (_searchQuery.isNotEmpty) {
+        setState(() => _searchQuery = '');
+      }
+      return;
+    }
+    // Aguarda o usuário terminar de digitar (380ms sem novas teclas) para filtrar e ordenar
+    _searchDebounce = Timer(const Duration(milliseconds: 380), () {
+      if (!mounted) return;
+      if (_searchQuery != text) {
+        setState(() => _searchQuery = text);
+      }
     });
+  }
+
+  void _applySearchImmediately() {
+    _searchDebounce?.cancel();
+    final text = _searchController.text.trim();
+    if (_searchQuery != text) {
+      setState(() => _searchQuery = text);
+    }
+  }
+
+  void _clearSearch() {
+    _searchDebounce?.cancel();
+    _searchController.clear();
+    if (_searchQuery.isNotEmpty) {
+      setState(() => _searchQuery = '');
+    }
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     super.dispose();
   }
@@ -510,34 +545,29 @@ class _InventoryScreenState extends State<InventoryScreen> {
           p.subcategory == _selectedSubcategory).toList();
     }
 
-    // 3. Busca Inteligente com Ranqueamento de Relevância (Melhor Coincidência no Topo)
+    // 3. Busca Inteligente com Ranqueamento de Relevância O(N) (Melhor Coincidência no Topo)
     if (_searchQuery.isNotEmpty) {
-      list = list.where((p) => p.matchesSearch(_searchQuery)).toList();
-
-      list.sort((a, b) {
-        final scoreA = a.searchRelevance(_searchQuery);
-        final scoreB = b.searchRelevance(_searchQuery);
-        final scoreDiff = scoreB.compareTo(scoreA); // Maior pontuação primeiro
-        if (scoreDiff != 0) return scoreDiff;
-
-        // Desempate secundário baseado na ordenação selecionada
-        switch (_selectedSort) {
-          case SortOption.relevance:
-          case SortOption.nameAsc:
-            return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-          case SortOption.nameDesc:
-            return b.name.toLowerCase().compareTo(a.name.toLowerCase());
-          case SortOption.quantityAsc:
-            return a.quantity.compareTo(b.quantity);
-          case SortOption.quantityDesc:
-            return b.quantity.compareTo(a.quantity);
-          case SortOption.recentlyUpdated:
-            final dateA = a.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-            final dateB = b.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-            return dateB.compareTo(dateA);
-        }
-      });
-      return list;
+      return ProductModel.filterAndSortByRelevance(
+        list,
+        _searchQuery,
+        tieBreaker: (a, b) {
+          switch (_selectedSort) {
+            case SortOption.relevance:
+            case SortOption.nameAsc:
+              return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+            case SortOption.nameDesc:
+              return b.name.toLowerCase().compareTo(a.name.toLowerCase());
+            case SortOption.quantityAsc:
+              return a.quantity.compareTo(b.quantity);
+            case SortOption.quantityDesc:
+              return b.quantity.compareTo(a.quantity);
+            case SortOption.recentlyUpdated:
+              final dateA = a.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+              final dateB = b.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+              return dateB.compareTo(dateA);
+          }
+        },
+      );
     }
 
     // 4. Ordenação Padrão (quando não há texto na barra de busca)
@@ -1274,6 +1304,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   leading: IconButton(
                     icon: const Icon(Icons.arrow_back),
                     onPressed: () {
+                      _searchDebounce?.cancel();
                       setState(() {
                         _isMobileSearchActive = false;
                         _searchController.clear();
@@ -1281,24 +1312,28 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       });
                     },
                   ),
-                  title: TextField(
-                    controller: _searchController,
-                    autofocus: true,
-                    style: GoogleFonts.inter(fontSize: 15),
-                    decoration: InputDecoration(
-                      hintText: 'Buscar por nome, código, P/N...',
-                      hintStyle: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted),
-                      border: InputBorder.none,
-                      suffixIcon: _searchQuery.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear, size: 20),
-                              onPressed: () {
-                                _searchController.clear();
-                                setState(() => _searchQuery = '');
-                              },
-                            )
-                          : null,
-                    ),
+                  title: ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _searchController,
+                    builder: (context, value, _) {
+                      return TextField(
+                        controller: _searchController,
+                        autofocus: true,
+                        textInputAction: TextInputAction.search,
+                        onSubmitted: (_) => _applySearchImmediately(),
+                        style: GoogleFonts.inter(fontSize: 15),
+                        decoration: InputDecoration(
+                          hintText: 'Buscar por nome, código, P/N...',
+                          hintStyle: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted),
+                          border: InputBorder.none,
+                          suffixIcon: value.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 20),
+                                  onPressed: _clearSearch,
+                                )
+                              : null,
+                        ),
+                      );
+                    },
                   ),
                 )
               : AppBar(
@@ -1792,23 +1827,30 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                   child: Row(
                     children: [
-                      // Campo de Busca inteligente
+                      // Campo de Busca inteligente (aguarda terminar de digitar)
                       Expanded(
-                        child: TextField(
-                          controller: _searchController,
-                          decoration: InputDecoration(
-                            hintText: 'Buscar por nome, cód. interno ou part number...',
-                            prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary),
-                            suffixIcon: _searchQuery.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear, size: 18),
-                                    onPressed: () => _searchController.clear(),
-                                  )
-                                : null,
-                            contentPadding:
-                                const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                            isDense: true,
-                          ),
+                        child: ValueListenableBuilder<TextEditingValue>(
+                          valueListenable: _searchController,
+                          builder: (context, value, _) {
+                            return TextField(
+                              controller: _searchController,
+                              textInputAction: TextInputAction.search,
+                              onSubmitted: (_) => _applySearchImmediately(),
+                              decoration: InputDecoration(
+                                hintText: 'Buscar por nome, cód. interno ou part number...',
+                                prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary),
+                                suffixIcon: value.text.isNotEmpty
+                                    ? IconButton(
+                                        icon: const Icon(Icons.clear, size: 18),
+                                        onPressed: _clearSearch,
+                                      )
+                                    : null,
+                                contentPadding:
+                                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                isDense: true,
+                              ),
+                            );
+                          },
                         ),
                       ),
                       const SizedBox(width: 10),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/constants/app_colors.dart';
@@ -30,6 +31,7 @@ class ArchivedProductsScreen extends StatefulWidget {
 
 class _ArchivedProductsScreenState extends State<ArchivedProductsScreen> {
   final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounce;
   String _searchQuery = '';
   late String _selectedMasterCategory;
   String? _selectedCategoryId;
@@ -43,15 +45,46 @@ class _ArchivedProductsScreenState extends State<ArchivedProductsScreen> {
   void initState() {
     super.initState();
     _selectedMasterCategory = widget.initialSectorId;
-    _searchController.addListener(() {
-      setState(() {
-        _searchQuery = _searchController.text.trim();
-      });
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  void _onSearchChanged() {
+    _searchDebounce?.cancel();
+    final text = _searchController.text.trim();
+    if (text.isEmpty) {
+      if (_searchQuery.isNotEmpty) {
+        setState(() => _searchQuery = '');
+      }
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 380), () {
+      if (!mounted) return;
+      if (_searchQuery != text) {
+        setState(() => _searchQuery = text);
+      }
     });
+  }
+
+  void _applySearchImmediately() {
+    _searchDebounce?.cancel();
+    final text = _searchController.text.trim();
+    if (_searchQuery != text) {
+      setState(() => _searchQuery = text);
+    }
+  }
+
+  void _clearSearch() {
+    _searchDebounce?.cancel();
+    _searchController.clear();
+    if (_searchQuery.isNotEmpty) {
+      setState(() => _searchQuery = '');
+    }
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     super.dispose();
   }
@@ -372,13 +405,7 @@ class _ArchivedProductsScreenState extends State<ArchivedProductsScreen> {
     }
 
     if (_searchQuery.isNotEmpty) {
-      list = list.where((p) => p.matchesSearch(_searchQuery)).toList();
-      list.sort((a, b) {
-        final sDiff = b.searchRelevance(_searchQuery).compareTo(a.searchRelevance(_searchQuery));
-        if (sDiff != 0) return sDiff;
-        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-      });
-      return list;
+      return ProductModel.filterAndSortByRelevance(list, _searchQuery);
     }
 
     switch (_selectedSort) {
@@ -447,6 +474,7 @@ class _ArchivedProductsScreenState extends State<ArchivedProductsScreen> {
                   leading: IconButton(
                     icon: const Icon(Icons.arrow_back),
                     onPressed: () {
+                      _searchDebounce?.cancel();
                       setState(() {
                         _isMobileSearchActive = false;
                         _searchController.clear();
@@ -454,23 +482,27 @@ class _ArchivedProductsScreenState extends State<ArchivedProductsScreen> {
                       });
                     },
                   ),
-                  title: TextField(
-                    controller: _searchController,
-                    autofocus: true,
-                    style: GoogleFonts.inter(fontSize: 15),
-                    decoration: InputDecoration(
-                      hintText: 'Buscar nos arquivados...',
-                      border: InputBorder.none,
-                      suffixIcon: _searchQuery.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear, size: 20),
-                              onPressed: () {
-                                _searchController.clear();
-                                setState(() => _searchQuery = '');
-                              },
-                            )
-                          : null,
-                    ),
+                  title: ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _searchController,
+                    builder: (context, value, _) {
+                      return TextField(
+                        controller: _searchController,
+                        autofocus: true,
+                        textInputAction: TextInputAction.search,
+                        onSubmitted: (_) => _applySearchImmediately(),
+                        style: GoogleFonts.inter(fontSize: 15),
+                        decoration: InputDecoration(
+                          hintText: 'Buscar nos arquivados...',
+                          border: InputBorder.none,
+                          suffixIcon: value.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 20),
+                                  onPressed: _clearSearch,
+                                )
+                              : null,
+                        ),
+                      );
+                    },
                   ),
                 )
               : AppBar(
@@ -687,20 +719,27 @@ class _ArchivedProductsScreenState extends State<ArchivedProductsScreen> {
                       child: Row(
                         children: [
                           Expanded(
-                            child: TextField(
-                              controller: _searchController,
-                              decoration: InputDecoration(
-                                hintText: 'Buscar item arquivado por nome, cód. interno ou P/N...',
-                                prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary),
-                                suffixIcon: _searchQuery.isNotEmpty
-                                    ? IconButton(
-                                        icon: const Icon(Icons.clear, size: 18),
-                                        onPressed: () => _searchController.clear(),
-                                      )
-                                    : null,
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                isDense: true,
-                              ),
+                            child: ValueListenableBuilder<TextEditingValue>(
+                              valueListenable: _searchController,
+                              builder: (context, value, _) {
+                                return TextField(
+                                  controller: _searchController,
+                                  textInputAction: TextInputAction.search,
+                                  onSubmitted: (_) => _applySearchImmediately(),
+                                  decoration: InputDecoration(
+                                    hintText: 'Buscar item arquivado por nome, cód. interno ou P/N...',
+                                    prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary),
+                                    suffixIcon: value.text.isNotEmpty
+                                        ? IconButton(
+                                            icon: const Icon(Icons.clear, size: 18),
+                                            onPressed: _clearSearch,
+                                          )
+                                        : null,
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                    isDense: true,
+                                  ),
+                                );
+                              },
                             ),
                           ),
                           const SizedBox(width: 10),
