@@ -4,7 +4,7 @@ class AppConstants {
 
   static const String appName = 'Estoque Luxpryme';
   static const String appTagline = 'Controle de Estoque Industrial';
-  static const String appVersion = '1.4.0';
+  static const String appVersion = '1.5.0';
   static const String appDeveloper = 'Tomas Pereyra';
   static const String appDeveloperRole = 'Desenvolvedor & Administrador';
 

@@ -137,7 +137,7 @@ Em um sistema offline-first, dois dispositivos desconectados podem retirar unida
 * **Validação de Credenciais:** Redução de ~1.500ms para **< 0,01ms**.
 * **Disponibilidade:** **100% operacional**, imune a quedas de internet e instabilidade de sinal de Wi-Fi no chão de fábrica.
 * **Auditoria e Rastreabilidade:** 100% das saídas registradas com data, hora, saldo anterior, saldo novo, identificação do operador e observação da Ordem de Produção.
-* **Cobertura de Testes:** **36 testes automatizados** cobrindo busca tokenizada, RBAC, serialização, conflitos offline e latência zero.
+* **Cobertura de Testes:** **51 testes automatizados** cobrindo busca tokenizada com ranqueamento de relevância `O(N)`, duplicação de estoque por setor, unidades de medida, arquivados, relatórios PDF/CSV, RBAC, conflitos offline e latência zero.
 
 ---
 
