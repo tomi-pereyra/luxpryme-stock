@@ -3,7 +3,7 @@
 **Versão do Sistema:** 1.5.0 (Edição Local-First Zero-Latency)  
 **Data da Edição:** Novembro de 2026  
 **Empresa:** Luxpryme Indústria Eletrônica  
-**Desenvolvedor e Administrador Geral:** Tomas Pereyra  
+**Arquiteto de Software e Administrador Geral:** Tomas Pereyra  
 **Ambientes Suportados:** Windows 10/11 (Desktop) e Android 7.0+ (Celulares e Coletores)
 
 ---
@@ -136,6 +136,7 @@ O aplicativo foi otimizado para proporcionar a melhor ergonomia tanto em monitor
 * **Barra de Setores Compacta:** Ocupa espaço reduzido na tela com chips horizontais e botão de ordenação rápida integrado à direita.
 * **Acesso às Categorias do Setor no Mobile:** Para visualizar as categorias técnicas vinculadas ao setor atual, basta **manter pressionado (toque longo / long press)** o chip do setor em que você se encontra.
 * **Menu de Ações Flutuante (Canto Inferior Direito):** Um botão redondo abre uma lista suspensa com ícones dedicados para todas as ferramentas essenciais:
+  - `+ Carrinho (Adicionar Produtos)` (Buscar e selecionar vários produtos informando a quantidade ao lado direito).
   - `+ Itens` (Duplicar estoque ou adicionar múltiplos produtos a um setor).
   - `- Itens` (Remover múltiplos produtos de um setor).
   - `Novo Item` (Cadastrar produto com escolha de unidade de medida e PIN em 0ms).
@@ -230,23 +231,33 @@ Disponível no menu flutuante inferior direito, essa ferramenta permite adiciona
 
 ---
 
-## 9. Movimentação de Estoque, Carrinho com Observação e Baixa com PIN
+## 9. Movimentação de Estoque, `+ Carrinho` em Lote, Carrinho com Observação e Baixa com PIN
 
-O sistema oferece dois modos de movimentação de saldo com resposta imediata e respeito à unidade de medida do produto (`un`, `kg`, `g`, `m`, `cm`, `L`, `mL`):
+O sistema oferece três modos ágeis de movimentação de saldo com resposta imediata e respeito à unidade de medida do produto (`un`, `kg`, `g`, `m`, `cm`, `L`, `mL`):
 
 ### Modo A: Ajuste Unitário Instantâneo (+1 / -1)
 * **Finalidade:** Pequenas baixas ou reposições rápidas de 1 unidade/medida em bancada.
 * **Como fazer:** No card do produto, toque nos botões `+` ou `-`. O saldo atualiza imediatamente no aparelho e salva no histórico em 0ms.
 
-### Modo B: Carrinho de Separação (Requisições em Lote e Ordem de Produção)
-* **Finalidade:** Separação de kits de componentes para ordens de serviço ou entrada de remessas de fornecedores.
+### Modo B: `+ Carrinho (Adicionar Produtos)` — Seleção Rápida em Lote com Quantidade à Direita
+* **Finalidade:** Montar rapidamente uma lista de separação com vários produtos em sequência (com funcionamento idêntico ao `+ Itens`).
+* **Como acessar:**
+  - Pelo **Menu de Ações** inferior direito -> **`+ Carrinho (Adicionar Produtos)`**; ou
+  - Dentro do próprio **Carrinho de Separação**, clicando no botão **`+ Produtos`** no topo (ou **`+ Adicionar Produtos ao Carrinho`**).
 * **Passo a Passo:**
-  1. No card do produto, toque no botão **Pegar...**.
-  2. Defina a quantidade (na unidade do produto: `un`, `kg`, `m`, `L`, etc.) e escolha **Retirar (Pegar)** ou **Repor (Entrada)**.
-  3. Adicione todos os componentes necessários à lista de separação.
-  4. Abra o **Carrinho** tocando no ícone do carrinho no topo da tela.
-  5. **Observação Opcional da Requisição:** Digite uma anotação técnica (ex: *"Linha 2 - Ordem de Produção #840"*).
-  6. Toque em **Finalizar com PIN** e digite o **PIN de 4 dígitos** do operador.
+  1. Escolha no topo o **Setor** para filtrar (ou *Todos os Setores*) e o tipo de operação: **Retirar do Estoque (Saída)** ou **Repor no Estoque (Entrada)**.
+  2. Pesquise o componente pelo nome, código interno ou P/N.
+  3. **Campo de Quantidade do Lado Direito:** Ao clicar no produto ou digitar diretamente um valor no campo de quantidade à direita da linha (que também conta com botões `-` e `+` e exibe a unidade de medida do item), o produto é marcado automaticamente.
+  4. **Fluxo Contínuo sem Perda de Posição:** Assim que um produto é marcado, o texto da barra de pesquisa é limpo para o próximo item, mantendo a lista na mesma posição até que você volte a digitar, enquanto o contador em círculo azul na barra de busca soma quantos produtos já foram escolhidos.
+  5. Clique em **`Adicionar ao Carrinho`** para enviar todos os produtos e suas quantidades de uma só vez ao carrinho.
+
+### Modo C: Carrinho de Separação (Requisições em Lote e Ordem de Produção)
+* **Finalidade:** Conferência final, anotação de ordem de serviço e baixa conjunta autenticada por PIN.
+* **Passo a Passo:**
+  1. Você pode adicionar itens tanto pelo **`+ Carrinho (Adicionar Produtos)`** quanto clicando no botão **`Pegar...`** diretamente no card de qualquer produto.
+  2. Abra o **Carrinho** tocando no ícone do carrinho no topo da tela.
+  3. **Observação Opcional da Requisição:** Digite uma anotação técnica (ex: *"Linha 2 - Ordem de Produção #840"*).
+  4. Toque em **Finalizar com PIN** e digite o **PIN de 4 dígitos** do operador.
 
 ---
 

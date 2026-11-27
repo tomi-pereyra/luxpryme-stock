@@ -1,37 +1,39 @@
 # 🚀 Case Study: Estoque Luxpryme — Sistema Industrial Multiplataforma (Flutter & Supabase) com Arquitetura Local-First Zero-Latency
 
 **Autor:** Tomas Pereyra  
-**Função:** Desenvolvedor de Software & Administrador do Sistema  
+**Papel no Projeto:** Arquiteto de Software, Product Owner & Administrador do Sistema  
 **Empresa:** Luxpryme Indústria Eletrônica  
-**Stack Tecnológica:** Flutter 3, Dart, Supabase Cloud, PostgreSQL, Local-First Engine, JSON Storage, Streams Reativos  
+**Versão Atual:** 1.5.0  
+**Stack Tecnológica:** Flutter 3, Dart, Supabase Cloud, PostgreSQL, Local-First Engine, JSON Storage, Streams Reativos, Engenharia de Software Assistida por IA  
 **Plataformas:** Windows Desktop & Android Mobile (Smartphones e Coletores)  
 
 ---
 
 ## 📌 Resumo Executivo
 
-O **Estoque Luxpryme** é uma solução corporativa completa de controle de estoque e almoxarifado industrial, projetada e desenvolvida sob medida para atender a rotina de alta precisão da Luxpryme Indústria Eletrônica. 
+O **Estoque Luxpryme** é uma solução corporativa completa de controle de estoque e almoxarifado industrial, concebida, arquitetada e gerida por mim para atender a rotina de alta precisão da **Luxpryme Indústria Eletrônica**.
 
-O software gerencia um catálogo técnico de **mais de 5.420 componentes**, integrando desde as bancadas do laboratório de engenharia eletrônica (microcomponentes SMD, semicondutores, placas PTH e PCBs) até as linhas fabris de montagem pesada de luminárias industriais, injeção plástica e almoxarifado predial.
+Combinando minha base de conhecimento em programação com **Arquitetura de Software, Engenharia de Requisitos Industriais e Direção Técnica de IA Agentiva**, liderei toda a concepção do sistema — definindo regras de negócio fabris, estrutura de dados, fluxos de experiência do usuário (UX) em bancada, decisões de sincronização Local-First e validação contínua — sem precisar digitar manualmente o código-fonte linha a linha.
 
-Neste estudo de caso, detalho os desafios de engenharia de software, as decisões arquiteturais que transformaram o app em uma plataforma **Local-First com Latência Zero (0ms)** e os resultados práticos obtidos no chão de fábrica.
+O software gerencia um catálogo técnico de **mais de 5.420 componentes**, integrando desde as bancadas do laboratório de engenharia eletrônica (microcomponentes SMD, semicondutores, placas PTH e PCBs) até as linhas fabris de montagem de luminárias industriais, preparação e almoxarifado geral.
 
 ---
 
 ## 🏭 1. O Desafio Industrial
 
-Em um ambiente de manufatura eletrônica, a agilidade e a confiabilidade dos registros de estoque são fatores críticos. Os principais desafios encontrados no chão de fábrica foram:
+Em um ambiente real de manufatura eletrônica, a agilidade operacional e a confiabilidade dos saldos de estoque são fatores críticos. Os principais problemas do chão de fábrica que mapeei e resolvi na arquitetura foram:
 
-1. **Volume e Especificidade Técnica do Inventário:** Mais de 5.420 produtos com nomenclaturas técnicas complexas, códigos internos, *part numbers* de fabricantes globais (Texas Instruments, STMicroelectronics, etc.) e localizações físicas em gaveteiros e prateleiras.
-2. **Ambiente com Instabilidade de Rede:** Galpões fabris e almoxarifados frequentemente sofrem com zonas de sombra de Wi-Fi. Um software que dependesse exclusivamente de chamadas HTTP tradicionais travaria os operadores a cada oscilação de sinal.
-3. **Necessidade de Zero Latência na Bancada:** O operador de bancada ou o técnico de montagem não pode esperar 3 a 5 segundos com uma tela de carregamento (*spinner*) a cada componente que retira ou cadastra. A operação precisa ser instantânea.
-4. **Governança e Controle de Alçadas:** Operadores do setor de Produção não devem movimentar componentes críticos de Eletrônica, e vice-versa. Era indispensável um mecanismo de segurança rápido, sem a fricção de logins longos com e-mail e senha em telas móveis.
+1. **Volume e Especificidade Técnica do Inventário:** Mais de 5.420 produtos com nomenclaturas técnicas extensas, códigos internos, *part numbers* de fabricantes globais, múltiplas formas de medição (unidades, peso em `kg`/`g`, comprimento em `m`/`cm`, volume em `L`/`mL`) e localizações físicas em gaveteiros e prateleiras.
+2. **Ambiente com Instabilidade de Rede:** Galpões fabris sofrem com zonas de sombra de Wi-Fi. Um aplicativo que dependesse de chamadas HTTP síncronas travaria os operadores a cada oscilação de sinal.
+3. **Necessidade de Zero Latência na Bancada:** O operador não pode esperar 3 a 5 segundos em uma tela de carregamento a cada componente que retira, edita ou adiciona ao carrinho. A resposta precisava ser instantânea (**0ms**).
+4. **Estoques Compartilhados vs Estoques Físicos Separados por Setor:** Alguns insumos ficam armazenados em um único local e são compartilhados por múltiplos setores, enquanto outros possuem **estoques físicos separados em setores diferentes** (ex: um lote no laboratório de *Eletrônica* e outro lote separado na linha de *Produção*), exigindo visão individual por setor e soma consolidada na visão geral da fábrica.
+5. **Governança e Rastreabilidade por Operador:** Operadores de um setor não devem alterar insumos restritos de outra área sem autorização. Era indispensável um controle de alçadas rápido por PIN numérico individual de 4 dígitos, sem a fricção de logins longos.
 
 ---
 
 ## 🏛️ 2. Arquitetura da Solução
 
-Para responder a esses requisitos, adotei o paradigma **Local-First (Offline-First)** com sincronização assíncrona desacoplada em nuvem.
+Para responder a esses requisitos, defini uma arquitetura **Local-First (Offline-First) com Latência Zero (0ms)** e sincronização assíncrona desacoplada em nuvem via Supabase.
 
 ```
 ┌────────────────────────────────────────────────────────┐
@@ -63,89 +65,61 @@ Para responder a esses requisitos, adotei o paradigma **Local-First (Offline-Fir
 └─────────────────────────┘    └─────────────────────────┘
 ```
 
-### Tecnologias Escolhidas:
-* **Frontend:** Flutter & Dart — interface nativa de alto desempenho, código único para Windows e Android, com suporte a atalhos de desktop e ergonomia touch para celulares.
-* **Backend & Banco de Dados:** Supabase Cloud (PostgreSQL 15), utilizando extensões nativas como `uuid-ossp` e canais *Realtime* para difusão instantânea de alterações.
-* **Gerenciamento de Estado:** Streams reativos (`StreamController<List<T>>`) e arquitetura baseada em serviços singleton com mutação otimista.
-* **Persistência Local:** Motor customizado de serialização e cache em disco JSON (`LocalCacheService`), capaz de armazenar e carregar todo o catálogo em milissegundos.
+### Pilares Arquiteturais Definidos:
+* **Frontend Multiplataforma:** Flutter & Dart — compilação nativa de alto desempenho para Windows Desktop e Android Mobile a partir de uma arquitetura unificada.
+* **Backend & Persistência Cloud:** Supabase Cloud (PostgreSQL 15) com sincronização multi-tabela (`products`, `categories`, `master_categories`, `operator_pins`, `stock_movements`).
+* **Persistência Local-First:** Camada `LocalCacheService` em disco (JSON) combinada com estado reativo em RAM (`StreamController<List<T>>`), garantindo abertura do app em **0 segundos** mesmo sem internet.
 
 ---
 
-## ⚡ 3. Inovações Técnicas e Desafios Superados
+## ⚡ 3. Decisões de Arquitetura e Soluções Projetadas
 
-### 3.1. Arquitetura Local-First Zero-Latency (0ms)
-No modelo web/cloud tradicional, uma requisição de cadastro ou alteração aguarda o *round-trip* da rede até o servidor antes de liberar a tela do usuário. Em um fluxo fabril, isso gerava lentidão perceptível.
+### 3.1. Mutação Local em 0ms e Sincronização em Segundo Plano
+Em vez de bloquear a interface aguardando a resposta da nuvem:
+* Todas as ações (cadastro, edição, duplicação de estoque, arquivamento, ajustes `+1/-1`, troca de categorias em lote e baixa de carrinho) atualizam **primeiro a memória RAM e o cache em disco local em 0ms**.
+* O envio ao Supabase ocorre de forma 100% assíncrona em segundo plano, com fila de contingência offline (`pending_sync_queue.json`) e sincronização manual completa multi-tabela (`syncAllWithSupabase`).
 
-**Como resolvi:**
-* Todas as mutações de dados (criação de produto, edição, exclusão, ajuste de estoque `+1/-1`, finalização de carrinho com múltiplos itens e remanejamento de setores) operam **diretamente nas estruturas em memória local e no cache em disco**.
-* O diálogo ou tela fecha **imediatamente (0ms)** e o catálogo já reflete a alteração com o badge atualizado.
-* A chamada ao Supabase é disparada de forma assíncrona (`unawaited`) em segundo plano.
-* Caso ocorra qualquer erro de conexão, a operação cai automaticamente na fila offline persistente para sincronização posterior.
+### 3.2. Modelagem Híbrida de Setores: Estoque Compartilhado vs Duplicação de Estoque
+Projetei um modelo flexível que atende as duas realidades físicas da fábrica:
+* **Estoque Compartilhado:** Quando um item é armazenado em um único ponto mas usado por mais de um setor, o mesmo registro vincula múltiplos setores.
+* **Estoques Separados por Setor (`Duplicar estoque`):** Permite criar um segundo estoque independente do mesmo produto em outro setor. Na aba de cada setor o operador vê e movimenta apenas o saldo daquele setor, enquanto na aba **`Todas`** (e no relatório geral) o sistema consolida automaticamente os registros em **1 único card** com a **soma total dos estoques** e o detalhamento por setor.
 
-### 3.2. Reconciliação Concorrente de UUIDs Nativos
-O PostgreSQL no Supabase exige chaves primárias do tipo `UUID`, geradas nativamente por `uuid_generate_v4()`. No modo offline ou local-first, o cliente precisa gerar um identificador provisório imediato para exibir o item na interface.
+### 3.3. Motor de Busca com Espera Inteligente (*Debounce*) e Ranqueamento de Relevância `O(N)`
+Para pesquisar em mais de 5.420 produtos com fluidez total:
+* **Espera de Digitação (*Debounce*):** A barra de pesquisa aguarda o usuário terminar de escrever (ou pressionar `Enter`) antes de disparar a filtragem, eliminando travamentos durante a digitação.
+* **Algoritmo de Melhor Coincidência (`O(N)`):** Calcula a pontuação de relevância uma única vez por item, priorizando no topo correspondências exatas da frase, pares de palavras consecutivas, códigos internos e validação por limite exato de palavra para siglas técnicas curtas (`AC`, `DC`, `IR`, `UV`), ignorando acentos automaticamente.
 
-**Como resolvi:**
-* O modelo `ProductModel` gera identificadores locais seguros.
-* Ao transmitir para o Supabase, o método `toMap(forDatabaseInsert: true)` filtra IDs provisórios e sanitiza chaves estrangeiras, permitindo que o PostgreSQL gere nativamente o UUID definitivo.
-* Quando o servidor retorna o registro gravado, um worker reconcilia o catálogo em memória, substituindo o identificador provisório pelo UUID oficial sem que o usuário perceba qualquer piscada ou recarregamento de tela.
+### 3.4. Unidades de Medida Configuráveis e Persistência Zero-Migration
+* Cada produto pode ser configurado para contagem por **Unidade (`un`)**, **Peso (`kg` / `g`)**, **Metro (`m` / `cm`)** ou **Volume (`L` / `mL`)**.
+* A arquitetura serializa metadados estendidos (como unidade de medida e estado de arquivamento) de forma transparente sobre a estrutura existente do PostgreSQL, mantendo compatibilidade total com a nuvem sem exigir migrações destrutivas de banco.
 
-### 3.3. Validação de Credenciais por PINs de 4 Dígitos em 0,001ms
-Para garantir segurança sem burocracia, cada separação ou ajuste de material exige a digitação de um PIN numérico de 4 dígitos. Inicialmente, cada validação fazia uma consulta SQL na nuvem, adicionando 1 a 2 segundos de latência.
+### 3.5. Operações em Lote de Alta Produtividade (`+ Carrinho`, `+ Itens`, `- Itens` e Troca de Categorias)
+Projetei fluxos específicos para eliminar cliques repetitivos no dia a dia:
+* **`+ Carrinho (Adicionar Produtos)`:** Permite buscar e selecionar vários produtos em sequência informando a quantidade diretamente em um campo à direita de cada item.
+* **Preservação Inteligente de Posição:** Ao selecionar um componente no `+ Carrinho`, `+ Itens`, `- Itens` ou `Trocar Categoria de Produtos`, o texto buscado é limpo automaticamente para a próxima pesquisa, mas a lista permanece na exata posição onde o usuário estava até que ele volte a digitar.
 
-**Como resolvi:**
-* Os operadores cadastrados são mantidos em cache seguro na memória do dispositivo.
-* A validação do PIN passou a ser instantânea (**0,001ms**). A consulta à nuvem só ocorre caso seja digitado um PIN recém-criado em outro terminal que ainda não tenha sido sincronizado.
-
-### 3.4. Algoritmo de Busca Tokenizada Desordenada
-Com um acervo de mais de 5.400 itens, operadores frequentemente buscavam peças digitando palavras fora da ordem exata (ex: `"farol placa 16"` em vez de `"MONTAGEM PLACA ELETRONICA FAROL 16 LEDS"`).
-
-**Como resolvi:**
-* Implementei um algoritmo de busca que tokeniza a consulta do usuário em palavras individuais normalizadas (sem acentos e em minúsculas).
-* O algoritmo valida se todos os termos digitados estão presentes no nome, código interno, part number ou nas subcategorias do produto, independentemente da posição em que aparecem.
-
-### 3.5. Governança Multi-Setorial (RBAC Industrial)
-O estoque foi estruturado em **Setores**:
-* **Eletrônica (Azul):** Laboratório de SMD/PTH e microeletrônica.
-* **Produção (Verde):** Montagem de luminárias e componentes mecânicos.
-* **Outros (Cinza):** Almoxarifado predial e manutenção.
-* **Setores Dinâmicos:** Novos setores criados pela supervisão (ex: *Preparação*, *Embalamento*).
-
-A hierarquia de permissões baseia-se em:
-* **PIN Setorial:** Autorizado a movimentar apenas peças do seu respectivo setor.
-* **PIN Mestre (Supervisor):** Alçada irrestrita, com permissão para gerenciar setores, criar novos operadores e reverter conflitos.
-
-### 3.6. Gestão em Lote Ágil (+ Itens e - Itens)
-Para reclassificar centenas de componentes entre setores sem a morosidade de abrir item por item:
-* Criei as ferramentas `+ Itens` e `- Itens`.
-* A ferramenta filtra de forma inteligente apenas os itens elegíveis.
-* Ao tocar em cada produto, um contador circular azul contabiliza a seleção e **o campo de pesquisa limpa o texto automaticamente**, mantendo o foco ativo para que o operador digite o próximo componente em fluxo contínuo.
-
-### 3.7. Detecção e Resolução de Conflitos Concorrentes
-Em um sistema offline-first, dois dispositivos desconectados podem retirar unidades do mesmo produto simultaneamente, gerando saldo negativo pós-sincronização.
-
-**Como resolvi:**
-* O sistema identifica divergências de saldo negativo e emite um alerta de conflito na tela inicial.
-* O gestor tem acesso a ferramentas de resolução rápida: zerar o estoque com PIN Mestre, estornar o déficit ou inserir a contagem física real constatada no almoxarifado.
+### 3.6. Produtos Arquivados, Lixeira de Recuperação e Relatórios Diretos em PDF/CSV
+* **Seção `Arquivados`:** Isola produtos fora de uso que ainda possuem saldo físico em estoque, mantendo-os divididos por setor e totalmente editáveis.
+* **Lixeira de Produtos:** Protege contra exclusões acidentais permitindo restauração imediata com PIN.
+* **Exportação Direta de Relatórios (PDF A4 e CSV Excel):** Geração de inventários de setores ativos, produtos arquivados e histórico de movimentações ordenados por **Código Interno** ou **Alfabético por Nome**, com salvamento direto em arquivo `.pdf` (janela *"Salvar como..."* no Windows e compartilhamento nativo no Android) ou impressão.
 
 ---
 
 ## 📊 4. Resultados e Métricas de Impacto
 
-* **Catálogo:** Mais de 5.420 produtos geridos com busca em tempo real.
-* **Tempo de Resposta nas Bancadas:** Redução da latência de salvamento de ~3 segundos para **0 milissegundos** na interface.
-* **Validação de Credenciais:** Redução de ~1.500ms para **< 0,01ms**.
-* **Disponibilidade:** **100% operacional**, imune a quedas de internet e instabilidade de sinal de Wi-Fi no chão de fábrica.
-* **Auditoria e Rastreabilidade:** 100% das saídas registradas com data, hora, saldo anterior, saldo novo, identificação do operador e observação da Ordem de Produção.
-* **Cobertura de Testes:** **51 testes automatizados** cobrindo busca tokenizada com ranqueamento de relevância `O(N)`, duplicação de estoque por setor, unidades de medida, arquivados, relatórios PDF/CSV, RBAC, conflitos offline e latência zero.
+* **Catálogo Industrial Ativo:** Mais de 5.420 produtos geridos com resposta instantânea.
+* **Latência de Interface nas Bancadas:** Reduzida de ~3 segundos para **0 milissegundos**.
+* **Validação de Credenciais por PIN:** Reduzida de ~1.500ms para **< 0,01ms** com atribuição exata por funcionário no histórico.
+* **Disponibilidade Operacional:** **100% funcional offline e online**, imune a oscilações de Wi-Fi no galpão industrial.
+* **Qualidade Verificada:** **51 testes automatizados** validando busca por relevância, duplicação e soma de estoques, unidades de medida, arquivados, relatórios, categorias por setor, RBAC e resolução de conflitos.
 
 ---
 
-## 👨‍💻 5. Sobre o Desenvolvedor
+## 👨‍💻 5. Sobre o Autor e Arquiteto do Projeto
 
 **Tomas Pereyra**  
-Desenvolvedor de Software e Administrador do Sistema Estoque Luxpryme.  
-Responsável pela concepção arquitetural, engenharia de software frontend e backend, implementação de banco de dados, design de interface e deploy multiplataforma (Windows e Android).
+**Arquiteto de Software, Product Owner & Administrador do Sistema Estoque Luxpryme.**  
+Responsável pela visão do produto, levantamento de requisitos no chão de fábrica, arquitetura Local-First, modelagem de fluxos operacionais, direção técnica de implementação assistida por IA, testes de aceitação e administração da infraestrutura multiplataforma (Windows e Android).
 
 * **GitHub:** [github.com/tomi-pereyra/luxpryme-stock](https://github.com/tomi-pereyra/luxpryme-stock)
-* **Tecnologias de Domínio:** Flutter, Dart, Supabase, PostgreSQL, Arquitetura Local-First, Engenharia de Software Industrial.
+* **Competências Destacadas:** Arquitetura de Software, Engenharia de Requisitos, Sistemas Local-First / Offline-First, Gestão de Produto Industrial, Engenharia de Software Assistida por IA (Flutter, Dart, Supabase, PostgreSQL).
