@@ -1410,5 +1410,72 @@ void main() {
       expect(updated2.categoryIds, equals([catTarget.id]));
       expect(updated2.categoryNames, contains('Cat Destino Lote'));
     });
+
+    test('Duplicar estoque cria estoque separado em outro setor e consolida soma na aba Todas', () async {
+      final service = InventoryService.instance;
+      service.setMode(localMode: true);
+
+      // Remove eventuais produtos anteriores do mesmo teste
+      final existing = service.currentProducts
+          .where((p) => p.internalCode == 'DUP-8899')
+          .toList();
+      for (final p in existing) {
+        await service.deleteProduct(p.id, pin: '2026');
+      }
+
+      // 1. Cria estoque inicial no setor Eletrônica com 25 un
+      final stockEletronica = const ProductModel(
+        id: 'prod-dup-elet',
+        name: 'Chicote Principal 4 Vias',
+        internalCode: 'DUP-8899',
+        masterCategories: ['eletronica'],
+        categoryIds: [],
+        quantity: 25,
+      );
+      await service.createProduct(stockEletronica, pin: '2026');
+
+      // 2. Duplica o estoque para o setor Produção com 15 un separadas
+      final stockProducao = await service.duplicateProductStockToSector(
+        sourceProduct: stockEletronica,
+        targetSectorId: 'producao',
+        initialQuantity: 15,
+        location: 'Bancada Montagem 2',
+        pin: '2026',
+      );
+
+      expect(stockProducao.id, isNot(equals(stockEletronica.id)));
+      expect(stockProducao.masterCategories, equals(['producao']));
+      expect(stockProducao.quantity, equals(15));
+
+      // Não deve permitir duplicar novamente para o mesmo setor onde já possui estoque
+      expect(
+        () => service.duplicateProductStockToSector(
+          sourceProduct: stockEletronica,
+          targetSectorId: 'producao',
+          initialQuantity: 10,
+          pin: '2026',
+        ),
+        throwsException,
+      );
+
+      // 3. Na visão de setores individuais, cada setor tem sua própria quantidade independente
+      final allActive = service.activeProducts
+          .where((p) => p.internalCode == 'DUP-8899')
+          .toList();
+      expect(allActive.length, equals(2));
+
+      final inEletronica = allActive.where((p) => p.masterCategories.contains('eletronica')).toList();
+      final inProducao = allActive.where((p) => p.masterCategories.contains('producao')).toList();
+      expect(inEletronica.single.quantity, equals(25));
+      expect(inProducao.single.quantity, equals(15));
+
+      // 4. Na aba "Todas", os estoques separados do mesmo produto são somados em 1 único card consolidado (25 + 15 = 40)
+      final consolidated = ProductModel.consolidateForAllSectorsView(allActive);
+      expect(consolidated.length, equals(1));
+      expect(consolidated.single.quantity, equals(40));
+      expect(consolidated.single.hasSeparateSectorStocks, isTrue);
+      expect(consolidated.single.splitStocks.length, equals(2));
+      expect(consolidated.single.masterCategories, containsAll(['eletronica', 'producao']));
+    });
   });
 }

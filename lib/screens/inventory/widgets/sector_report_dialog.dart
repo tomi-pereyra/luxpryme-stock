@@ -150,13 +150,17 @@ if (\$res -eq [System.Windows.Forms.DialogResult]::OK) {
     required SectorReportSortOrder sortOrder,
   }) {
     final cleanSector = sectorId.trim().toLowerCase();
-    final filtered = sourceProducts.where((p) {
+    var filtered = sourceProducts.where((p) {
       if (p.isArchived != isArchived) return false;
       if (cleanSector.isNotEmpty && cleanSector != 'todas') {
         return p.masterCategories.any((m) => m.toLowerCase() == cleanSector);
       }
       return true;
     }).toList();
+
+    if (cleanSector.isEmpty || cleanSector == 'todas') {
+      filtered = ProductModel.consolidateForAllSectorsView(filtered);
+    }
 
     switch (sortOrder) {
       case SectorReportSortOrder.byInternalCode:

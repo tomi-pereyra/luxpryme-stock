@@ -25,6 +25,7 @@ import 'widgets/pin_confirmation_dialog.dart';
 import 'widgets/library_mode_screen.dart';
 import 'widgets/batch_add_master_category_dialog.dart';
 import 'widgets/batch_change_category_dialog.dart';
+import 'widgets/duplicate_stock_dialog.dart';
 import 'widgets/sector_report_dialog.dart';
 import 'widgets/stock_conflict_dialog.dart';
 import 'widgets/trash_bin_dialog.dart';
@@ -215,23 +216,46 @@ class _InventoryScreenState extends State<InventoryScreen> {
     );
   }
 
-  void _openEditProductDialog(
-      ProductModel product, List<CategoryModel> categories) {
+  Future<void> _openEditProductDialog(
+      ProductModel product, List<CategoryModel> categories) async {
+    ProductModel target = product;
+    if (product.hasSeparateSectorStocks) {
+      final picked = await DuplicateStockDialog.pickSectorStock(
+        context,
+        consolidatedProduct: product,
+        actionTitle: 'Editar estoque de qual setor?',
+      );
+      if (picked == null || !mounted) return;
+      target = picked;
+    }
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (_) => ProductFormDialog(
-        productToEdit: product,
+        productToEdit: target,
         categories: categories,
       ),
     );
   }
 
   Future<void> _handleArchiveProduct(ProductModel product) async {
+    ProductModel target = product;
+    if (product.hasSeparateSectorStocks) {
+      final picked = await DuplicateStockDialog.pickSectorStock(
+        context,
+        consolidatedProduct: product,
+        actionTitle: 'Arquivar estoque de qual setor?',
+      );
+      if (picked == null || !mounted) return;
+      target = picked;
+    }
+    if (!mounted) return;
+
     final pin = await PinConfirmationDialog.show(
       context,
       title: 'Arquivar Produto',
       subtitle: 'O item continuará salvo com seu saldo e setor na seção "Arquivados". Digite seu PIN de 4 dígitos:',
-      itemName: product.name,
+      itemName: target.name,
       actionLabel: 'Arquivar Item',
       actionColor: const Color(0xFFD97706),
       actionIcon: Icons.archive_outlined,
@@ -240,12 +264,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
     if (pin == null) return;
 
     try {
-      await InventoryService.instance.archiveProduct(product.id, pin: pin);
+      await InventoryService.instance.archiveProduct(target.id, pin: pin);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: AppColors.stockNormal,
-            content: Text('Item "${product.name}" movido para Arquivados!'),
+            content: Text('Item "${target.name}" movido para Arquivados!'),
           ),
         );
       }
@@ -262,12 +286,24 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   Future<void> _handleDeleteProduct(ProductModel product) async {
+    ProductModel target = product;
+    if (product.hasSeparateSectorStocks) {
+      final picked = await DuplicateStockDialog.pickSectorStock(
+        context,
+        consolidatedProduct: product,
+        actionTitle: 'Excluir estoque de qual setor?',
+      );
+      if (picked == null || !mounted) return;
+      target = picked;
+    }
+    if (!mounted) return;
+
     // Exige autenticação por PIN de 4 dígitos para eliminar produto
     final pin = await PinConfirmationDialog.show(
       context,
       title: 'Confirmar Exclusão',
       subtitle: 'Para eliminar o item do estoque, digite seu PIN de 4 dígitos:',
-      itemName: product.name,
+      itemName: target.name,
       actionLabel: 'Excluir Produto',
       actionColor: AppColors.stockZero,
       actionIcon: Icons.delete_forever,
@@ -276,12 +312,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
     if (pin == null) return; // Cancelado pelo usuário
 
     try {
-      await InventoryService.instance.deleteProduct(product.id, pin: pin);
+      await InventoryService.instance.deleteProduct(target.id, pin: pin);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: AppColors.stockNormal,
-            content: Text('Item "${product.name}" excluído com sucesso.'),
+            content: Text('Item "${target.name}" excluído com sucesso.'),
           ),
         );
       }
@@ -298,7 +334,19 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   Future<void> _openMoveMasterCategoryDialog(ProductModel product) async {
-    final selected = Set<String>.from(product.masterCategories);
+    ProductModel target = product;
+    if (product.hasSeparateSectorStocks) {
+      final picked = await DuplicateStockDialog.pickSectorStock(
+        context,
+        consolidatedProduct: product,
+        actionTitle: 'Gerenciar setores de qual estoque?',
+      );
+      if (picked == null || !mounted) return;
+      target = picked;
+    }
+    if (!mounted) return;
+
+    final selected = Set<String>.from(target.masterCategories);
     final allMasterCats = InventoryService.instance.masterCategories;
 
     final result = await showDialog<Set<String>>(
@@ -317,19 +365,19 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    product.name,
+                    target.name,
                     style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
                   ),
-                  if (product.internalCode != null && product.internalCode!.isNotEmpty) ...[
+                  if (target.internalCode != null && target.internalCode!.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text(
-                      'Cód. Int: ${product.internalCode}',
+                      'Cód. Int: ${target.internalCode}',
                       style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
                     ),
                   ],
                   const SizedBox(height: 16),
                   Text(
-                    'Selecione os setores para este produto:',
+                    'Selecione os setores que compartilham este mesmo estoque:',
                     style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
                   ),
                   const SizedBox(height: 12),
@@ -380,14 +428,14 @@ class _InventoryScreenState extends State<InventoryScreen> {
     if (result != null && result.isNotEmpty) {
       try {
         await InventoryService.instance.moveProductMasterCategories(
-          productId: product.id,
+          productId: target.id,
           masterCategories: result.toList(),
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               backgroundColor: AppColors.stockNormal,
-              content: Text('Setor de "${product.name}" atualizado com sucesso!'),
+              content: Text('Setor de "${target.name}" atualizado com sucesso!'),
             ),
           );
         }
@@ -529,6 +577,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
       list = list
           .where((p) => p.masterCategories.contains(_selectedMasterCategory))
           .toList();
+    } else {
+      // Na aba "Todas", consolida estoques separados do mesmo produto somando suas quantidades
+      list = ProductModel.consolidateForAllSectorsView(list);
     }
 
     // 1. Filtro por Categoria (Suporta múltiplas categorias por produto)
@@ -1661,7 +1712,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                   'todas',
                                   'Todas',
                                   Icons.dashboard_outlined,
-                                  rawProducts.length,
+                                  ProductModel.consolidateForAllSectorsView(rawProducts).length,
                                   onLongPress: isMobile
                                       ? () => _showSubcategoriesBottomSheet(
                                             categories,

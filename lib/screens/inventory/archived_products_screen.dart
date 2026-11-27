@@ -15,6 +15,7 @@ import 'widgets/pin_confirmation_dialog.dart';
 import 'widgets/product_card.dart';
 import 'widgets/product_form_dialog.dart';
 import 'widgets/batch_change_category_dialog.dart';
+import 'widgets/duplicate_stock_dialog.dart';
 import 'widgets/sector_report_dialog.dart';
 
 class ArchivedProductsScreen extends StatefulWidget {
@@ -96,22 +97,45 @@ class _ArchivedProductsScreenState extends State<ArchivedProductsScreen> {
     );
   }
 
-  void _openEditProductDialog(ProductModel product, List<CategoryModel> categories) {
+  Future<void> _openEditProductDialog(ProductModel product, List<CategoryModel> categories) async {
+    ProductModel target = product;
+    if (product.hasSeparateSectorStocks) {
+      final picked = await DuplicateStockDialog.pickSectorStock(
+        context,
+        consolidatedProduct: product,
+        actionTitle: 'Editar arquivado de qual setor?',
+      );
+      if (picked == null || !mounted) return;
+      target = picked;
+    }
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (_) => ProductFormDialog(
-        productToEdit: product,
+        productToEdit: target,
         categories: categories,
       ),
     );
   }
 
   Future<void> _handleUnarchiveProduct(ProductModel product) async {
+    ProductModel target = product;
+    if (product.hasSeparateSectorStocks) {
+      final picked = await DuplicateStockDialog.pickSectorStock(
+        context,
+        consolidatedProduct: product,
+        actionTitle: 'Desarquivar estoque de qual setor?',
+      );
+      if (picked == null || !mounted) return;
+      target = picked;
+    }
+    if (!mounted) return;
+
     final pin = await PinConfirmationDialog.show(
       context,
       title: 'Desarquivar Produto',
       subtitle: 'Digite seu PIN de 4 dígitos para retornar este item ao estoque ativo:',
-      itemName: product.name,
+      itemName: target.name,
       actionLabel: 'Desarquivar',
       actionColor: AppColors.stockNormal,
       actionIcon: Icons.unarchive_outlined,
@@ -120,12 +144,12 @@ class _ArchivedProductsScreenState extends State<ArchivedProductsScreen> {
     if (pin == null) return;
 
     try {
-      await InventoryService.instance.unarchiveProduct(product.id, pin: pin);
+      await InventoryService.instance.unarchiveProduct(target.id, pin: pin);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: AppColors.stockNormal,
-            content: Text('Item "${product.name}" retornado ao estoque ativo!'),
+            content: Text('Item "${target.name}" retornado ao estoque ativo!'),
           ),
         );
       }
@@ -142,11 +166,23 @@ class _ArchivedProductsScreenState extends State<ArchivedProductsScreen> {
   }
 
   Future<void> _handleDeleteProduct(ProductModel product) async {
+    ProductModel target = product;
+    if (product.hasSeparateSectorStocks) {
+      final picked = await DuplicateStockDialog.pickSectorStock(
+        context,
+        consolidatedProduct: product,
+        actionTitle: 'Excluir arquivado de qual setor?',
+      );
+      if (picked == null || !mounted) return;
+      target = picked;
+    }
+    if (!mounted) return;
+
     final pin = await PinConfirmationDialog.show(
       context,
       title: 'Confirmar Exclusão',
       subtitle: 'Para mover este item arquivado para a lixeira, digite seu PIN de 4 dígitos:',
-      itemName: product.name,
+      itemName: target.name,
       actionLabel: 'Excluir Produto',
       actionColor: AppColors.stockZero,
       actionIcon: Icons.delete_forever,
@@ -155,12 +191,12 @@ class _ArchivedProductsScreenState extends State<ArchivedProductsScreen> {
     if (pin == null) return;
 
     try {
-      await InventoryService.instance.deleteProduct(product.id, pin: pin);
+      await InventoryService.instance.deleteProduct(target.id, pin: pin);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: AppColors.stockNormal,
-            content: Text('Item "${product.name}" movido para a lixeira.'),
+            content: Text('Item "${target.name}" movido para a lixeira.'),
           ),
         );
       }
@@ -177,7 +213,19 @@ class _ArchivedProductsScreenState extends State<ArchivedProductsScreen> {
   }
 
   Future<void> _openMoveMasterCategoryDialog(ProductModel product) async {
-    final selected = Set<String>.from(product.masterCategories);
+    ProductModel target = product;
+    if (product.hasSeparateSectorStocks) {
+      final picked = await DuplicateStockDialog.pickSectorStock(
+        context,
+        consolidatedProduct: product,
+        actionTitle: 'Alterar setor de qual estoque arquivado?',
+      );
+      if (picked == null || !mounted) return;
+      target = picked;
+    }
+    if (!mounted) return;
+
+    final selected = Set<String>.from(target.masterCategories);
     final allMasterCats = InventoryService.instance.masterCategories;
 
     final result = await showDialog<Set<String>>(
@@ -196,7 +244,7 @@ class _ArchivedProductsScreenState extends State<ArchivedProductsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    product.name,
+                    target.name,
                     style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
                   ),
                   const SizedBox(height: 12),
@@ -246,14 +294,14 @@ class _ArchivedProductsScreenState extends State<ArchivedProductsScreen> {
     if (result != null && result.isNotEmpty) {
       try {
         await InventoryService.instance.moveProductMasterCategories(
-          productId: product.id,
+          productId: target.id,
           masterCategories: result.toList(),
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               backgroundColor: AppColors.stockNormal,
-              content: Text('Setor de "${product.name}" atualizado!'),
+              content: Text('Setor de "${target.name}" atualizado!'),
             ),
           );
         }
@@ -392,6 +440,8 @@ class _ArchivedProductsScreenState extends State<ArchivedProductsScreen> {
 
     if (_selectedMasterCategory != 'todas') {
       list = list.where((p) => p.masterCategories.contains(_selectedMasterCategory)).toList();
+    } else {
+      list = ProductModel.consolidateForAllSectorsView(list);
     }
 
     if (effectiveCategoryId != null) {

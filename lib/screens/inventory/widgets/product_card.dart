@@ -6,6 +6,7 @@ import '../../../data/models/master_category_model.dart';
 import '../../../data/models/product_model.dart';
 import '../../../data/services/inventory_service.dart';
 import 'add_to_cart_dialog.dart';
+import 'duplicate_stock_dialog.dart';
 
 class ProductCard extends StatelessWidget {
   final ProductModel product;
@@ -14,6 +15,7 @@ class ProductCard extends StatelessWidget {
   final VoidCallback onOpenCart;
   final VoidCallback? onMoveMasterCategory;
   final VoidCallback? onArchiveToggle;
+  final VoidCallback? onDuplicateStock;
 
   const ProductCard({
     super.key,
@@ -23,6 +25,7 @@ class ProductCard extends StatelessWidget {
     required this.onOpenCart,
     this.onMoveMasterCategory,
     this.onArchiveToggle,
+    this.onDuplicateStock,
   });
 
   Color _getStatusColor() {
@@ -39,11 +42,24 @@ class ProductCard extends StatelessWidget {
 
   /// Ajuste rápido unitário instantâneo (+1 e -1 direto, sem pedir PIN)
   Future<void> _quickChangeStock(BuildContext context, int delta) async {
-    if (delta < 0 && product.quantity <= 0) {
+    ProductModel targetProduct = product;
+    if (product.hasSeparateSectorStocks) {
+      final picked = await DuplicateStockDialog.pickSectorStock(
+        context,
+        consolidatedProduct: product,
+        actionTitle: delta > 0
+            ? 'Adicionar +1 ${product.unitSymbol} em qual setor?'
+            : 'Retirar -1 ${product.unitSymbol} de qual setor?',
+      );
+      if (picked == null || !context.mounted) return;
+      targetProduct = picked;
+    }
+
+    if (delta < 0 && targetProduct.quantity <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: AppColors.stockZero,
-          content: Text('O produto já está com 0 ${product.unitSymbol}.'),
+          content: Text('O estoque deste setor já está com 0 ${targetProduct.unitSymbol}.'),
           duration: const Duration(milliseconds: 1500),
         ),
       );
@@ -52,7 +68,7 @@ class ProductCard extends StatelessWidget {
 
     try {
       await InventoryService.instance.quickAdjustUnit(
-        product: product,
+        product: targetProduct,
         delta: delta,
       );
       if (context.mounted) {
@@ -61,8 +77,8 @@ class ProductCard extends StatelessWidget {
             backgroundColor: delta > 0 ? AppColors.stockNormal : AppColors.primary,
             content: Text(
               delta > 0
-                  ? '+1 ${product.unitSymbol} registrado no histórico!'
-                  : '-1 ${product.unitSymbol} registrado no histórico!',
+                  ? '+1 ${targetProduct.unitSymbol} registrado no histórico!'
+                  : '-1 ${targetProduct.unitSymbol} registrado no histórico!',
               style: GoogleFonts.inter(fontWeight: FontWeight.w600),
             ),
             duration: const Duration(milliseconds: 1200),
@@ -280,8 +296,28 @@ class ProductCard extends StatelessWidget {
                     if (val == 'delete') onDelete();
                     if (val == 'move_category') onMoveMasterCategory?.call();
                     if (val == 'archive_toggle') onArchiveToggle?.call();
+                    if (val == 'duplicate_stock') {
+                      if (onDuplicateStock != null) {
+                        onDuplicateStock!();
+                      } else {
+                        DuplicateStockDialog.show(context, product);
+                      }
+                    }
                   },
                   itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'duplicate_stock',
+                      child: Row(
+                        children: [
+                          Icon(Icons.copy_all_outlined, size: 18, color: Color(0xFF0284C7)),
+                          SizedBox(width: 8),
+                          Text(
+                            'Duplicar estoque',
+                            style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF0284C7)),
+                          ),
+                        ],
+                      ),
+                    ),
                     if (onMoveMasterCategory != null)
                       const PopupMenuItem(
                         value: 'move_category',
@@ -401,6 +437,44 @@ class ProductCard extends StatelessWidget {
               ),
             ],
 
+            // Detalhe de Estoques Separados por Setor (exibido na aba "Todas" quando há mais de 1 estoque do mesmo produto)
+            if (product.hasSeparateSectorStocks) ...[
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: product.splitStocks.map((stock) {
+                  final masterCats = InventoryService.instance.masterCategories;
+                  final firstSec = stock.masterCategories.isNotEmpty
+                      ? stock.masterCategories.first
+                      : 'eletronica';
+                  final secModel = masterCats.firstWhere(
+                    (m) => m.id.toLowerCase() == firstSec.toLowerCase(),
+                    orElse: () => MasterCategoryModel(id: firstSec, name: firstSec),
+                  );
+                  final secLabel = stock.masterCategories
+                      .map((id) => InventoryService.instance.getMasterCategoryName(id))
+                      .join('/');
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                    decoration: BoxDecoration(
+                      color: secModel.color.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: secModel.color.withValues(alpha: 0.35)),
+                    ),
+                    child: Text(
+                      '$secLabel: ${NumberFormat('#,###', 'pt_BR').format(stock.quantity)} ${stock.unitSymbol}',
+                      style: GoogleFonts.inter(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: secModel.color,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+
             const Divider(height: 16, color: AppColors.border),
 
             // Controles de Estoque Responsivos (com Wrap para evitar overflow em larguras compactas)
@@ -416,7 +490,9 @@ class ProductCard extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'ESTOQUE DISPONÍVEL',
+                      product.hasSeparateSectorStocks
+                          ? 'SOMA TOTAL DOS ESTOQUES'
+                          : 'ESTOQUE DISPONÍVEL',
                       style: GoogleFonts.inter(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
@@ -506,11 +582,22 @@ class ProductCard extends StatelessWidget {
                           side: const BorderSide(color: AppColors.primaryLight),
                         ),
                       ),
-                      onPressed: () {
+                      onPressed: () async {
+                        ProductModel targetProduct = product;
+                        if (product.hasSeparateSectorStocks) {
+                          final picked = await DuplicateStockDialog.pickSectorStock(
+                            context,
+                            consolidatedProduct: product,
+                            actionTitle: 'Movimentar estoque de qual setor?',
+                          );
+                          if (picked == null || !context.mounted) return;
+                          targetProduct = picked;
+                        }
+                        if (!context.mounted) return;
                         showDialog(
                           context: context,
                           builder: (_) => AddToCartDialog(
-                            product: product,
+                            product: targetProduct,
                             onOpenCart: onOpenCart,
                           ),
                         );

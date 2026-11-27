@@ -53,6 +53,7 @@ class _BatchAddMasterCategoryDialogState
   Timer? _searchDebounce;
   String _activeFilterQuery = '';
   bool _isFilterPreservedAfterSelection = false;
+  bool _createSeparateStock = true; // Padrão: Duplicar estoque (criar estoque separado neste setor)
   bool _isSaving = false;
   String? _errorMessage;
 
@@ -274,6 +275,7 @@ class _BatchAddMasterCategoryDialogState
           productIds: _selectedProductIds.toList(),
           targetMasterCategoryId: _selectedMasterCategoryId,
           pin: pinConfirmed,
+          createSeparateStock: _createSeparateStock,
         );
       } else {
         await InventoryService.instance.bulkRemoveProductsFromMasterCategory(
@@ -403,6 +405,64 @@ class _BatchAddMasterCategoryDialogState
             ),
             const Divider(height: 1, color: AppColors.border),
 
+            if (isAddMode)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                color: const Color(0xFFF8FAFC),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      'Modo de Adição:',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    ChoiceChip(
+                      avatar: Icon(
+                        Icons.copy_all_outlined,
+                        size: 15,
+                        color: _createSeparateStock ? AppColors.primaryDark : AppColors.textSecondary,
+                      ),
+                      label: Text(
+                        'Duplicar estoque (estoque separado)',
+                        style: GoogleFonts.inter(
+                          fontSize: 11.5,
+                          fontWeight: _createSeparateStock ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                      selected: _createSeparateStock,
+                      selectedColor: AppColors.primaryContainer,
+                      visualDensity: VisualDensity.compact,
+                      onSelected: (_) => setState(() => _createSeparateStock = true),
+                    ),
+                    ChoiceChip(
+                      avatar: Icon(
+                        Icons.share_outlined,
+                        size: 15,
+                        color: !_createSeparateStock ? AppColors.primaryDark : AppColors.textSecondary,
+                      ),
+                      label: Text(
+                        'Compartilhar mesmo estoque',
+                        style: GoogleFonts.inter(
+                          fontSize: 11.5,
+                          fontWeight: !_createSeparateStock ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                      selected: !_createSeparateStock,
+                      selectedColor: AppColors.primaryContainer,
+                      visualDensity: VisualDensity.compact,
+                      onSelected: (_) => setState(() => _createSeparateStock = false),
+                    ),
+                  ],
+                ),
+              ),
+
             // Barra de Busca no Canto Superior com Contador em Círculo
             Padding(
               padding: const EdgeInsets.all(12),
@@ -497,14 +557,22 @@ class _BatchAddMasterCategoryDialogState
                   }
 
                   final allProducts = (snapshot.data ?? []).where((p) => !p.isArchived).toList();
+                  final groupKeysAlreadyInTarget = allProducts
+                      .where((p) => p.masterCategories.contains(_selectedMasterCategoryId))
+                      .map((p) => p.productGroupKey)
+                      .toSet();
+
                   // Regra solicitada:
                   // No + itens, produtos já presentes na categoria mestre NÃO aparecem.
                   // No - itens, produtos que NÃO estão na categoria mestre NÃO aparecem.
                   final scopedProducts = isAddMode
-                      ? allProducts
-                          .where((p) =>
-                              !p.masterCategories.contains(_selectedMasterCategoryId))
-                          .toList()
+                      ? ProductModel.consolidateForAllSectorsView(
+                          allProducts
+                              .where((p) =>
+                                  !p.masterCategories.contains(_selectedMasterCategoryId) &&
+                                  !groupKeysAlreadyInTarget.contains(p.productGroupKey))
+                              .toList(),
+                        )
                       : allProducts
                           .where((p) =>
                               p.masterCategories.contains(_selectedMasterCategoryId))

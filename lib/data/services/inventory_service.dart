@@ -2899,10 +2899,74 @@ class InventoryService {
     }
   }
 
+  /// Duplica o estoque de um produto para outro setor como um registro de estoque separado e independente,
+  /// permitindo que cada setor tenha sua própria contagem e que a aba "Todas" exiba a soma dos estoques.
+  Future<ProductModel> duplicateProductStockToSector({
+    required ProductModel sourceProduct,
+    required String targetSectorId,
+    required int initialQuantity,
+    String? location,
+    String? pin,
+  }) async {
+    final cleanSector = targetSectorId.trim().toLowerCase();
+    if (cleanSector.isEmpty || cleanSector == 'todas') {
+      throw Exception('Selecione um setor válido para criar o estoque separado.');
+    }
+    if (initialQuantity < 0) {
+      throw Exception('A quantidade inicial não pode ser negativa.');
+    }
+
+    // Verifica se já existe um estoque deste mesmo produto vinculado ao setor de destino
+    final groupKey = sourceProduct.productGroupKey;
+    final alreadyInSector = currentProducts.any((p) =>
+        p.isArchived == sourceProduct.isArchived &&
+        p.productGroupKey == groupKey &&
+        p.masterCategories.any((m) => m.toLowerCase() == cleanSector));
+
+    if (alreadyInSector) {
+      final sectorName = getMasterCategoryName(cleanSector);
+      throw Exception(
+        'O produto "${sourceProduct.name}" já possui um estoque cadastrado no setor "$sectorName".',
+      );
+    }
+
+    final duplicated = ProductModel(
+      id: 'prod-${DateTime.now().microsecondsSinceEpoch}',
+      name: sourceProduct.name,
+      code: sourceProduct.code,
+      internalCode: sourceProduct.internalCode,
+      manufacturerCode: sourceProduct.manufacturerCode,
+      barcode: sourceProduct.barcode,
+      masterCategories: [cleanSector],
+      categoryIds: List<String>.from(sourceProduct.categoryIds),
+      categoryNames: sourceProduct.categoryNames != null
+          ? List<String>.from(sourceProduct.categoryNames!)
+          : null,
+      subcategories: List<String>.from(sourceProduct.subcategories),
+      quantity: initialQuantity,
+      minQuantity: sourceProduct.minQuantity,
+      unit: sourceProduct.unit,
+      location: (location != null && location.trim().isNotEmpty)
+          ? location.trim()
+          : sourceProduct.location,
+      notes: sourceProduct.notes,
+      isArchived: sourceProduct.isArchived,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+
+    await createProduct(duplicated, pin: pin);
+    return currentProducts.firstWhere(
+      (p) => p.id == duplicated.id,
+      orElse: () => duplicated,
+    );
+  }
+
   Future<void> bulkAddProductsToMasterCategory({
     required List<String> productIds,
     required String targetMasterCategoryId,
     required String pin,
+    bool createSeparateStock = false,
   }) async {
     if (productIds.isEmpty) return;
 
@@ -2912,6 +2976,27 @@ class InventoryService {
     }
 
     final catId = targetMasterCategoryId.toLowerCase().trim();
+
+    if (createSeparateStock) {
+      for (final id in productIds) {
+        final baseProd = currentProducts.where((p) => p.id == id).firstOrNull;
+        if (baseProd == null) continue;
+        final alreadyInSector = currentProducts.any((p) =>
+            p.isArchived == baseProd.isArchived &&
+            p.productGroupKey == baseProd.productGroupKey &&
+            p.masterCategories.any((m) => m.toLowerCase() == catId));
+        if (alreadyInSector) continue;
+
+        await duplicateProductStockToSector(
+          sourceProduct: baseProd,
+          targetSectorId: catId,
+          initialQuantity: 0,
+          pin: pin,
+        );
+      }
+      return;
+    }
+
     final Map<String, List<String>> updatedMap = {};
 
     for (final id in productIds) {

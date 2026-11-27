@@ -17,6 +17,7 @@ class ProductModel {
   final bool isArchived;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  final List<ProductModel> splitStocks; // Estoques separados por setor quando consolidado na aba "Todas"
 
   static const String archivedTag = '__archived__';
   static const String unitTagPrefix = '__unit:';
@@ -81,7 +82,107 @@ class ProductModel {
     this.isArchived = false,
     this.createdAt,
     this.updatedAt,
+    this.splitStocks = const [],
   }) : _legacySubcategory = subcategory;
+
+  /// Indica se este card representa a consolidação (soma) de múltiplos estoques separados do mesmo produto na aba "Todas"
+  bool get hasSeparateSectorStocks => splitStocks.length > 1;
+
+  /// Chave canônica para identificar diferentes estoques do mesmo produto (mesmo Código Interno + Nome normalizado)
+  String get productGroupKey {
+    final normName = normalizeSearchText(name);
+    final normIntCode = normalizeSearchText(internalCode ?? code ?? '');
+    if (normIntCode.isNotEmpty) {
+      return 'code:$normIntCode|name:$normName';
+    }
+    final normMfg = normalizeSearchText(manufacturerCode ?? '');
+    return 'name:$normName|mfg:$normMfg';
+  }
+
+  /// Consolida estoques separados do mesmo produto em um único item com a soma das quantidades (usado na aba "Todas")
+  static List<ProductModel> consolidateForAllSectorsView(
+    List<ProductModel> products,
+  ) {
+    if (products.length <= 1) return products;
+
+    final Map<String, List<ProductModel>> groups = {};
+    final List<String> keyOrder = [];
+
+    for (final p in products) {
+      final key = '${p.isArchived ? "arch" : "act"}|${p.productGroupKey}';
+      if (!groups.containsKey(key)) {
+        groups[key] = [p];
+        keyOrder.add(key);
+      } else {
+        groups[key]!.add(p);
+      }
+    }
+
+    final List<ProductModel> result = [];
+    for (final key in keyOrder) {
+      final group = groups[key]!;
+      if (group.length == 1) {
+        result.add(group.first);
+        continue;
+      }
+
+      // Soma os estoques separados do mesmo produto
+      int totalQuantity = 0;
+      int maxMinQuantity = 0;
+      final List<String> mergedMasterCats = [];
+      final List<String> mergedCatIds = [];
+      final List<String> mergedCatNames = [];
+      final List<String> mergedSubcats = [];
+      final List<String> locations = [];
+      DateTime? latestUpdated;
+
+      for (final item in group) {
+        totalQuantity += item.quantity;
+        if (item.minQuantity > maxMinQuantity) {
+          maxMinQuantity = item.minQuantity;
+        }
+        for (final mc in item.masterCategories) {
+          if (!mergedMasterCats.contains(mc)) mergedMasterCats.add(mc);
+        }
+        for (final cid in item.categoryIds) {
+          if (!mergedCatIds.contains(cid)) mergedCatIds.add(cid);
+        }
+        for (final cname in (item.categoryNames ?? const <String>[])) {
+          if (!mergedCatNames.contains(cname)) mergedCatNames.add(cname);
+        }
+        for (final sub in item.subcategories) {
+          if (!mergedSubcats.contains(sub)) mergedSubcats.add(sub);
+        }
+        if (item.location != null &&
+            item.location!.trim().isNotEmpty &&
+            !locations.contains(item.location!.trim())) {
+          locations.add(item.location!.trim());
+        }
+        if (item.updatedAt != null) {
+          if (latestUpdated == null || item.updatedAt!.isAfter(latestUpdated)) {
+            latestUpdated = item.updatedAt;
+          }
+        }
+      }
+
+      final primary = group.first;
+      result.add(
+        primary.copyWith(
+          quantity: totalQuantity,
+          minQuantity: maxMinQuantity,
+          masterCategories: mergedMasterCats,
+          categoryIds: mergedCatIds,
+          categoryNames: mergedCatNames,
+          subcategories: mergedSubcats,
+          location: locations.isEmpty ? null : locations.join(' • '),
+          updatedAt: latestUpdated ?? primary.updatedAt,
+          splitStocks: List.unmodifiable(group),
+        ),
+      );
+    }
+
+    return result;
+  }
 
   String get unitSymbol => normalizeUnit(unit);
 
@@ -567,6 +668,7 @@ class ProductModel {
     bool? isArchived,
     DateTime? createdAt,
     DateTime? updatedAt,
+    List<ProductModel>? splitStocks,
   }) {
     List<String> finalSubcats = subcategories ?? this.subcategories;
     if (subcategory != null && subcategories == null) {
@@ -592,6 +694,7 @@ class ProductModel {
       isArchived: isArchived ?? this.isArchived,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      splitStocks: splitStocks ?? this.splitStocks,
     );
   }
 }
