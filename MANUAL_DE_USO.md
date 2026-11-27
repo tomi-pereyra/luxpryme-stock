@@ -354,15 +354,77 @@ Na tela de **Histórico & Relatórios**:
 
 ---
 
-## 18. Instalação em Novos Computadores e Celulares
+## 18. Instalação em Novos Computadores e Celulares (Tendo o `.zip` ou `.apk`)
 
-### No Computador (Windows):
-1. Copie o arquivo `LuxprymeStock-Windows.zip` para o computador e extraia a pasta.
-2. Execute `luxpryme_stock.exe` (crie um atalho na Área de Trabalho para acesso diário).
+Esta seção explica o passo a passo completo para instalar ou atualizar o **Estoque Luxpryme** utilizando o pacote **`LuxprymeStock-Windows.zip`** (para computadores Windows) ou o instalador **`app-release.apk`** (para celulares e coletores Android).
 
-### No Celular (Android):
-1. Envie o arquivo `app-release.apk` para o celular e toque nele para instalar.
-2. Abra o **Estoque Luxpryme**.
+---
+
+### 18.1. Instalação no Computador (Windows 10 / 11) — Tendo o arquivo `.zip`
+
+O pacote do Windows (`LuxprymeStock-Windows.zip`) é um sistema portátil completo: não exige instaladores complexos nem permissões de administrador de rede.
+
+#### Passo 1: Extrair o arquivo `.zip` (Obrigatório)
+> **Importante:** **Não** abra o `luxpryme_stock.exe` diretamente de dentro da janela do arquivo `.zip` compactado. O aplicativo precisa que todas as pastas (`data`) e bibliotecas (`.dll`) estejam extraídas juntas na mesma pasta para funcionar.
+
+1. Copie ou baixe o arquivo **`LuxprymeStock-Windows.zip`** para o computador.
+2. Clique com o **botão direito do mouse** sobre o arquivo `LuxprymeStock-Windows.zip` e selecione **"Extrair Tudo..."** (ou utilize o WinRAR / 7-Zip clicando em *"Extrair para LuxprymeStock-Windows"*).
+3. Escolha uma pasta fixa no computador para guardar o sistema — por exemplo:
+   - `C:\LuxprymeStock` ou
+   - `Documentos\LuxprymeStock`
+4. Clique em **Extrair**.
+
+#### Passo 2: Abrir o aplicativo pela primeira vez
+1. Abra a pasta que foi extraída.
+2. Localize o arquivo **`luxpryme_stock.exe`** (ícone azul com a letra **"L"** branca da Luxpryme) e dê dois cliques nele.
+3. **Caso apareça o aviso azul do Windows Defender SmartScreen** (*"O Windows protegeu o seu computador"* — comum em softwares corporativos internos):
+   - Clique no link **"Mais informações"** (logo abaixo do texto);
+   - Em seguida, clique no botão **"Executar assim mesmo"** que aparecerá na parte inferior da janela.
+   *(Esse aviso só aparece na primeira execução).*
+
+#### Passo 3: Criar um atalho na Área de Trabalho (Desktop)
+Para facilitar o acesso diário dos operadores:
+1. Dentro da pasta extraída, clique com o **botão direito do mouse** sobre o arquivo **`luxpryme_stock.exe`**.
+   *(No Windows 11, clique primeiro em **"Mostrar mais opções"**)*.
+2. Passe o mouse em **"Enviar para"** e clique em **"Área de trabalho (criar atalho)"**.
+3. Você também pode fixar o programa na barra inferior do Windows: com o aplicativo aberto, clique com o botão direito no ícone dele na Barra de Tarefas e selecione **"Fixar na barra de tarefas"**.
+
+#### Passo 4: Como atualizar o aplicativo no Windows quando receber um novo `.zip`
+1. **Feche** o aplicativo Estoque Luxpryme caso ele esteja aberto no computador.
+2. Extraia o novo arquivo `LuxprymeStock-Windows.zip` na mesma pasta onde o sistema está instalado, escolhendo **"Substituir os arquivos no destino"** (ou apague a pasta antiga do executável e extraia a nova).
+3. Seus dados locais, cache do catálogo e sessão permanecem salvos automaticamente.
+
+---
+
+### 18.2. Instalação no Celular ou Coletor (Android) — Tendo o arquivo `.apk`
+
+O aplicativo para Android é distribuído através do arquivo instalador **`app-release.apk`**.
+
+#### Passo 1: Enviar o arquivo `.apk` para o celular
+1. Envie o arquivo **`app-release.apk`** para o celular ou coletor de dados por qualquer um dos meios abaixo:
+   - **WhatsApp** (enviando como documento);
+   - **Google Drive** ou **E-mail**;
+   - **Cabo USB** conectado ao computador (copiando para a pasta *Download* do aparelho).
+
+#### Passo 2: Permitir a instalação e instalar o aplicativo
+1. No celular, toque diretamente sobre o arquivo **`app-release.apk`** (pelo WhatsApp ou abrindo o aplicativo **Arquivos / Meus Arquivos** -> pasta **Downloads**).
+2. **Caso o Android exiba o aviso de permissão** (*"Para sua segurança, seu smartphone não tem permissão para instalar apps desconhecidos desta fonte"*):
+   - Toque no botão **"Configurações"** na mensagem;
+   - Ative a chave **"Permitir desta fonte"** (ou *"Autorizar desta fonte"*);
+   - Toque na seta de **Voltar** do celular.
+3. Toque no botão **"Instalar"** e aguarde alguns segundos.
+4. **Caso apareça um aviso do Google Play Protect** (*"O app não foi reconhecido"* — exibido porque é um aplicativo interno da empresa e não está público na Play Store):
+   - Toque em **"Mais detalhes"**;
+   - Toque em **"Instalar assim mesmo"** (ou *"Instalar sem verificar"*).
+
+#### Passo 3: Abrir e usar no celular
+1. Quando a mensagem *"App instalado"* aparecer, toque em **"Abrir"**.
+2. O ícone azul **"L" (Estoque Luxpryme)** ficará salvo na tela inicial e na gaveta de aplicativos do celular.
+3. Na primeira abertura, insira o e-mail e a senha corporativos. O aplicativo baixará todo o catálogo para a memória local do aparelho e passará a abrir instantaneamente (inclusive offline).
+
+#### Passo 4: Como atualizar o aplicativo no Android quando receber um novo `.apk`
+1. Não é necessário desinstalar a versão antiga.
+2. Basta enviar o novo arquivo **`app-release.apk`** para o celular, tocar sobre ele e clicar em **"Atualizar"** (ou **"Instalar"**). O Android atualizará o aplicativo mantendo seus dados e login intactos.
 
 ---
 
