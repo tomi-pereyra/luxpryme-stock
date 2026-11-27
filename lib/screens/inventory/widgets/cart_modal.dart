@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/services/cart_service.dart';
 import '../../../data/services/inventory_service.dart';
+import 'batch_add_to_cart_dialog.dart';
 
 class CartModal extends StatefulWidget {
   const CartModal({super.key});
@@ -206,6 +207,21 @@ class _CartModalState extends State<CartModal> {
                           ],
                         ),
                       ),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        icon: const Icon(Icons.add_shopping_cart, size: 15),
+                        label: Text(
+                          '+ Produtos',
+                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
+                        ),
+                        onPressed: () {
+                          BatchAddToCartDialog.show(context);
+                        },
+                      ),
+                      const SizedBox(width: 4),
                       if (items.isNotEmpty)
                         TextButton(
                           onPressed: () => CartService.instance.clear(),
@@ -243,12 +259,23 @@ class _CartModalState extends State<CartModal> {
                                 ),
                                 const SizedBox(height: 6),
                                 Text(
-                                  'Clique em "Pegar / Movimentar" em qualquer componente da lista.',
+                                  'Clique em "+ Produtos" acima ou em "Pegar..." em qualquer componente da lista.',
                                   textAlign: TextAlign.center,
                                   style: GoogleFonts.inter(
                                     fontSize: 12,
                                     color: AppColors.textSecondary,
                                   ),
+                                ),
+                                const SizedBox(height: 16),
+                                ElevatedButton.icon(
+                                  icon: const Icon(Icons.add_shopping_cart, size: 18),
+                                  label: Text(
+                                    '+ Adicionar Produtos ao Carrinho',
+                                    style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                                  ),
+                                  onPressed: () {
+                                    BatchAddToCartDialog.show(context);
+                                  },
                                 ),
                               ],
                             ),

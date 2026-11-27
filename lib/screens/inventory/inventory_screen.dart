@@ -24,6 +24,7 @@ import 'widgets/product_form_dialog.dart';
 import 'widgets/pin_confirmation_dialog.dart';
 import 'widgets/library_mode_screen.dart';
 import 'widgets/batch_add_master_category_dialog.dart';
+import 'widgets/batch_add_to_cart_dialog.dart';
 import 'widgets/batch_change_category_dialog.dart';
 import 'widgets/duplicate_stock_dialog.dart';
 import 'widgets/sector_report_dialog.dart';
@@ -877,6 +878,37 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
+
+                // 0. + Carrinho (Adicionar Produtos em Lote com Quantidade)
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDBEAFE),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.add_shopping_cart, color: AppColors.primary),
+                  ),
+                  title: Text(
+                    '+ Carrinho (Adicionar Produtos)',
+                    style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w700, fontSize: 14),
+                  ),
+                  subtitle: Text(
+                    'Buscar e selecionar vários produtos informando a quantidade ao lado',
+                    style: GoogleFonts.inter(
+                        fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    BatchAddToCartDialog.show(
+                      context,
+                      initialSectorId: _selectedMasterCategory,
+                      onOpenCart: _openCartModal,
+                    );
+                  },
+                ),
+                const Divider(height: 1),
 
                 // 1. + Itens
                 ListTile(
